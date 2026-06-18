@@ -73,23 +73,28 @@ TIMEFRAME_CONFIGS = {
 }
 
 # -----------------------------------------------------------------------------
-# TAB 2 - YENİ OTOMASYON KONFİGÜRASYONU (DİNAMİK PİVOT PARAMETRELERİ)
+# TAB 2 - MAKRO TREND DİNAMİK PİVOT PARAMETRELERİ
 # -----------------------------------------------------------------------------
 TAB2_AUTO_CONFIGS = {
     "Saatlik (1H) - Kısa Vade & Yüksek Volatilite": {
-        "yf_interval": "1h", "yf_period": "2mo", "tv_interval": "60",
+        "yf_interval": "1h", "yf_period": "3mo", "tv_interval": "60",
         "auto_left": 20, "auto_right": 3,
-        "desc": "Gün içi gürültüyü filtrelemek için geniş bir bar taraması (20 Sol / 3 Sağ) uygulanır."
+        "desc": "Gün içi gürültüyü filtrelemek için son 3 aylık veride geniş bar taraması (20 Sol / 3 Sağ) uygulanır."
     },
     "Günlük (1D) - Orta Vade & Standart Salınım": {
-        "yf_interval": "1d", "yf_period": "6mo", "tv_interval": "D",
+        "yf_interval": "1d", "yf_period": "1y", "tv_interval": "D",
         "auto_left": 10, "auto_right": 2,
-        "desc": "Klasik Swing Trade kalibrasyonu. Yaklaşık 2 haftalık (10 Sol / 2 Sağ) net dirençler baz alınır."
+        "desc": "Klasik Swing Trade kalibrasyonu. Yaklaşık 2 haftalık (10 Sol / 2 Sağ) net dirençler son 1 yıl içinde aranır."
     },
-    "Haftalık (1W) - Uzun Vade & Makro Trend": {
-        "yf_interval": "1wk", "yf_period": "2y", "tv_interval": "W",
-        "auto_left": 5, "auto_right": 1,
-        "desc": "Haftalık barlarda gürültü az olduğu için dar bir bar taraması (5 Sol / 1 Sağ) ile makro kırılımlar aranır."
+    "Haftalık (1W) - Uzun Vade & Ana Dirençler": {
+        "yf_interval": "1wk", "yf_period": "5y", "tv_interval": "W",
+        "auto_left": 8, "auto_right": 2,
+        "desc": "Ana dirençleri tespit etmek için son 5 YILLIK geçmiş veride (8 Sol / 2 Sağ) makro kırılımlar aranır."
+    },
+    "Aylık (1M) - Süper Makro & Tarihi Zirveler": {
+        "yf_interval": "1mo", "yf_period": "5y", "tv_interval": "M",
+        "auto_left": 6, "auto_right": 1,
+        "desc": "Hissenin ana trendini görmek için son 5 YILLIK aylık mumlar (6 Sol / 1 Sağ) incelenerek en büyük yapılar tespit edilir."
     }
 }
 
@@ -98,7 +103,7 @@ def safe_fmt(val, fmt=".2f"):
     return f"{val:{fmt}}"
 
 # =============================================================================
-# ORTAK VERİ VE TAB 1 FONKSİYONLARI (DOKUNULMADI)
+# ORTAK VERİ VE TAB 1 FONKSİYONLARI 
 # =============================================================================
 def scan_tradingview_by_timeframe(tf_config):
     url = "https://scanner.tradingview.com/turkey/scan"
@@ -198,7 +203,6 @@ def get_all_bist_symbols():
     except: pass
     return []
 
-# TAB 2 İÇİN DİNAMİK YAPILANDIRILMIŞ CACHE FONKSİYONU
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_bist_data_dynamic_cached(tickers, period, interval):
     return yf.download(tickers=tickers, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
@@ -294,12 +298,11 @@ with tab2:
     
     col_t2, col_btn2 = st.columns([3, 1])
     with col_t2:
-        selected_tab2_tf = st.selectbox("Sistem Periyodunu Seçin:", list(TAB2_AUTO_CONFIGS.keys()), index=1)
+        selected_tab2_tf = st.selectbox("Sistem Periyodunu Seçin:", list(TAB2_AUTO_CONFIGS.keys()), index=2) # Varsayılan olarak Haftalık seçili gelir
     with col_btn2:
         st.write("##")
         run_pine_scan = st.button("STRATEJİYİ ÇALIŞTIR", key="tab2_btn")
     
-    # Seçilen konfigürasyonu al ve ekrana bilgi bas
     active_config = TAB2_AUTO_CONFIGS[selected_tab2_tf]
     st.markdown(f"""
     <div style='background-color:#111827; padding:15px; border-left:4px solid #d97706; margin-bottom:20px;'>
@@ -325,7 +328,6 @@ with tab2:
             yf_tickers = [f"{s}.IS" for s in bist_symbols]
             
             with st.spinner(f"Dinamik veri havuzu oluşturuluyor ({len(bist_symbols)} hisse, Periyot: {active_config['yf_interval']})..."):
-                # DİNAMİK PARAMETRELER BURADA FONKSİYONA GÖNDERİLİYOR
                 df_all = fetch_bist_data_dynamic_cached(
                     tickers=yf_tickers, 
                     period=active_config["yf_period"], 
@@ -354,7 +356,6 @@ with tab2:
                             pine_logs.append(f"[BREAKOUT] {symbol:<6} : Otomatik trend hattı kırıldı.")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
-                            # TradingView linki de seçilen periyoda göre dinamik açılır
                             tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval={tv_interval}"
                             st.session_state.tab2_rows.append({
                                 "Hisse": symbol,
