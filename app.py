@@ -326,7 +326,7 @@ with tab1:
                 if is_matched:
                     live_logs.append(f"[OK]   {symbol:<6} : V1:{v1_f} < V2:{v2_f} < V3:{v3_f} (Hacim Onaylandı)")
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
-                    macd_status = f"NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
+                    macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"🟢 POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
                     
                     tv_prefix = mkt_config["tv_prefix"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
