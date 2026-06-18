@@ -350,9 +350,9 @@ with tab1:
                     macd_val = tv_data['macd']
                     sig_val = tv_data['signal']
                     if macd_val is not None and macd_val < 0:
-                        macd_status = f"NEGATIF BOLGE ({macd_val:.2f} / {sig_val:.2f})"
+                        macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f} / {sig_val:.2f})"
                     else:
-                        macd_status = f"POZITIF BOLGE ({macd_val:.2f} / {sig_val:.2f})"
+                        macd_status = f"🟢  POZITIF BOLGE ({macd_val:.2f} / {sig_val:.2f})"
                     
                     tv_code = tf_config["tv_interval"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval={tv_code}"
