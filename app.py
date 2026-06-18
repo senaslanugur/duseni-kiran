@@ -267,7 +267,7 @@ with tab1:
         selected_tf = st.selectbox("Periyot Seçin:", list(TIMEFRAME_CONFIGS.keys()), index=1, key="tab1_tf")
     with col_btn:
         st.write("##")
-        execute_scan = st.button("HİBRİT SİSTEMİ TETİKLE 🚀", key="tab1_btn")
+        execute_scan = st.button("HİBRİT SİSTEMİ TETİKLE", key="tab1_btn")
 
     if "tab1_rows" not in st.session_state: st.session_state.tab1_rows = []
     if "tab1_dfs" not in st.session_state: st.session_state.tab1_dfs = {}
