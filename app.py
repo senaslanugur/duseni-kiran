@@ -327,8 +327,8 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI (3 YIL + HACİM)",
-    "FIBONACCI İSTATİSTİK MATRİSİ (YENİ)"
+    "MAKRO TREND KIRILIMI",
+    "FIBONACCI İSTATİSTİK MATRİSİ"
 ])
 
 # ------------------------- TAB 1 -------------------------
