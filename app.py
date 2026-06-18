@@ -73,24 +73,6 @@ TIMEFRAME_CONFIGS = {
     "1 Haftalık (1W)": {"tv_suffix": "|1W", "tv_interval": "W", "yf_interval": "1wk", "resample_rule": None, "period": "3y"}
 }
 
-# -----------------------------------------------------------------------------
-# TAB 2 - DİNAMİK MAKRO TREND + BOLLINGER PRO KONFİGÜRASYONU
-# -----------------------------------------------------------------------------
-TAB2_AUTO_CONFIGS = {
-    "Saatlik (1H) - Yüksek Volatilite": {
-        "yf_interval": "1h", "yf_period": "6mo", "tv_interval": "60",
-        "lookback": 450, "desc": "Gün içi gürültüyü filtrelemek için 450 barlık derin tarama uygulanır."
-    },
-    "Günlük (1D) - Orta Vade (Standart)": {
-        "yf_interval": "1d", "yf_period": "2y", "tv_interval": "D",
-        "lookback": 300, "desc": "Son 300 işlem günündeki (yaklaşık 1.5 yıl) mutlak tepe baz alınarak dışbükey direnç taranır."
-    },
-    "Haftalık (1W) - Süper Makro Trend": {
-        "yf_interval": "1wk", "yf_period": "5y", "tv_interval": "W",
-        "lookback": 150, "desc": "Haftalık periyotta son 150 haftalık tarihi zirve dirençleri test edilir."
-    }
-}
-
 def safe_fmt(val, fmt=".2f"):
     if val is None or pd.isna(val): return "N/A"
     return f"{val:{fmt}}"
@@ -197,79 +179,80 @@ def get_all_bist_symbols():
     return []
 
 # =============================================================================
-# TAB 2 - PINE SCRIPT (CONVEX HULL) + BOLLINGER MOTORU
+# TAB 2 - TRADER MANTIĞI: 3 YILLIK MAKRO TREND VE HACİM ONAYI
 # =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_bist_data_dynamic_cached(tickers, period, interval):
-    return yf.download(tickers=tickers, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
+def fetch_macro_bist_data_cached(tickers):
+    # Makro görünüm için tam 5 yıllık haftalık mumlar indirilir.
+    return yf.download(tickers=tickers, period="5y", interval="1wk", group_by="ticker", threads=True, progress=False)
 
-def evaluate_macro_bollinger_breakout(df, lookback_input=300, confirm_len=20, bb_length=20, bb_mult=2.0):
+def evaluate_macro_trader_breakout(df, lookback_bars=200):
     """
-    Pine Script mantığının mutlak tepe tespiti, dışbükey negatif eğim taraması 
-    ve Bollinger Bantları onayını içeren güncel versiyonudur.
+    Trader stratejisi: 3-4 Yıllık devasa bir baskının hacimli kırılıp kırılmadığını kontrol eder.
     """
-    if df is None or len(df) < max(lookback_input, confirm_len, bb_length) + 5: 
+    if df is None or len(df) < lookback_bars + 5: 
         return False, None
     
-    # Hesaplamaları son kısıma odaklayarak bellek tasarrufu yapıyoruz
-    df_calc = df.tail(lookback_input + 50).copy()
-    highs = df_calc['High'].values
-    closes = df_calc['Close'].values
-    
-    # Bollinger Bantları (Pandas ile)
-    sma = df_calc['Close'].rolling(window=bb_length).mean()
-    std = df_calc['Close'].rolling(window=bb_length).std(ddof=0)
-    bb_upper = (sma + (bb_mult * std)).values
+    highs = df['High'].values
+    closes = df['Close'].values
+    opens = df['Open'].values
+    volumes = df['Volume'].values
     
     curr_idx = len(highs) - 1
     prev_idx = curr_idx - 1
     
-    # 1. Lookback penceresi içindeki Mutlak Zirveyi Bul (u_start_b)
-    start_lookback = max(0, curr_idx - lookback_input)
-    u_start_b = start_lookback + np.argmax(highs[start_lookback:curr_idx+1])
+    # 1. Ana Tepeyi (Tarihi Zirveyi) Bul
+    start_search = max(0, curr_idx - lookback_bars)
+    u_start_b = start_search + np.argmax(highs[start_search:curr_idx])
     u_start_p = highs[u_start_b]
     
-    # 2. İkinci Tepeyi Bul (En Yatay Negatif Eğim)
+    # 2. En dıştaki teğet noktasını (Sert Satış Direncini) Bul
     max_u_slope = -np.inf
     u_sec_b = -1
     u_sec_p = -1
     
-    # Mutlak zirveden güncel bara kadar tarama yap: $\frac{High[i] - u\_start\_p}{i - u\_start\_b}$
-    for i in range(u_start_b + 1, curr_idx + 1):
+    for i in range(u_start_b + 1, curr_idx):
         slope = (highs[i] - u_start_p) / (i - u_start_b)
         if slope < 0 and slope > max_u_slope:
             max_u_slope = slope
             u_sec_b = i
             u_sec_p = highs[i]
             
-    if u_sec_b == -1: # Düşen bir trend (geçerli negatif eğim) oluşmamışsa iptal et
+    if u_sec_b == -1: 
         return False, None
         
-    # 3. Kırılım Hesaplaması (Dinamik Trend Çizgisi Değerleri)
+    # 3. Kırılım Çizgisini (Direnci) Hesapla
     prev_trendline = u_start_p + max_u_slope * (prev_idx - u_start_b)
     curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
     
-    # 4. Kırılım Koşulları (Pine Script ile Birebir Eşleşme)
-    # KOŞUL 1: Trend Kırılımı (crossover)
+    # ---------------------------------------------------------
+    # 4. TRADER KOŞULLARI (FİYAT + HACİM)
+    # ---------------------------------------------------------
+    # A. Fiyat Kırılımı: Önceki hafta altında, bu hafta üstünde mi?
     line_crossed = (closes[prev_idx] <= prev_trendline) and (closes[curr_idx] > curr_trendline)
     
-    # KOŞUL 2: Netlik Filtresi (Önceki 20 barın en yüksek kapanışını aşmalı)
-    # NOT: Python diziliminde güncel bar dışarıda bırakılır ki mantık hatası oluşmasın.
-    highest_close_prev = np.max(closes[curr_idx - confirm_len : curr_idx])
-    is_strong = closes[curr_idx] > highest_close_prev
+    # B. Yeşil/Alıcılı Mum: Kapanış açılışın üzerinde mi? (Satış yiyip fitil bırakmamış olmalı)
+    is_green_candle = closes[curr_idx] > opens[curr_idx]
     
-    # KOŞUL 3: Bollinger Üst Bant Onayı
-    bb_confirmed = closes[curr_idx] > bb_upper[curr_idx]
+    # C. Hacim Şoku (Smart Money Onayı): Son 1 ayın (4 hafta) ortalama hacmi
+    avg_vol_1m = np.mean(volumes[curr_idx-4 : curr_idx])
+    curr_vol = volumes[curr_idx]
     
-    pro_breakout = line_crossed and is_strong and bb_confirmed and (curr_idx > u_sec_b)
+    # Hacim, son 1 ayın ortalamasından en az %50 fazla olmalı (Sıfıra bölünme hatasını engelle)
+    is_volume_backed = False
+    vol_increase_pct = 0
+    if avg_vol_1m > 0:
+        is_volume_backed = curr_vol > (avg_vol_1m * 1.5)
+        vol_increase_pct = ((curr_vol / avg_vol_1m) - 1) * 100
+
+    pro_breakout = line_crossed and is_green_candle and is_volume_backed
     
     if pro_breakout:
         return True, {
             "price": closes[curr_idx],
             "trend_val": curr_trendline,
-            "bb_upper": bb_upper[curr_idx],
             "u_start_p": u_start_p,
-            "u_sec_p": u_sec_p
+            "vol_increase": vol_increase_pct
         }
     return False, None
 
@@ -277,8 +260,9 @@ def evaluate_macro_bollinger_breakout(df, lookback_input=300, confirm_len=20, bb
 # UI RENDER MİMARİSİ
 # =============================================================================
 st.title("TRADER WORKSTATION")
-tab1, tab2 = st.tabs(["HİBRİT TARAMA", "DİNAMİK BOLLINGER BREAKOUT (PRO)"])
+tab1, tab2 = st.tabs(["HİBRİT TARAMA", "MAKRO TREND KIRILIMI (3 YIL + HACİM)"])
 
+# ------------------------- TAB 1 -------------------------
 with tab1:
     col_tf, col_btn = st.columns([3, 1])
     with col_tf: selected_tf = st.selectbox("Zaman Periyodu:", list(TIMEFRAME_CONFIGS.keys()), index=1)
@@ -341,30 +325,27 @@ with tab1:
     elif st.session_state.last_tf:
         st.write("---"); st.markdown(f"<div style='color:#9ca3af; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] {st.session_state.last_tf} periyodunda belirtilen hacim ve indikatör koşullarını sağlayan hisse bulunamadı.</div>", unsafe_allow_html=True)
 
+# ------------------------- TAB 2 -------------------------
 with tab2:
-    st.write("### DİNAMİK MAKRO TREND VE BOLLINGER MİMARİSİ")
+    st.write("### HACİM ONAYLI MAKRO TREND KIRILIM STRATEJİSİ")
     
-    col_t2, col_btn2 = st.columns([3, 1])
-    with col_t2:
-        selected_tab2_tf = st.selectbox("Sistem Periyodunu Seçin:", list(TAB2_AUTO_CONFIGS.keys()), index=1)
-    with col_btn2:
-        st.write("##")
-        run_pine_scan = st.button("PRO STRATEJİYİ ÇALIŞTIR", key="tab2_btn")
-    
-    active_config = TAB2_AUTO_CONFIGS[selected_tab2_tf]
-    st.markdown(f"""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #0084ff; margin-bottom:20px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Sistem Otomasyonu Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>{active_config["desc"]}</div>
-        <div style='color:#0084ff; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [+] Lookback (Tarama Derinliği) = {active_config["lookback"]} Bar | Netlik Onayı = Son 20 Bar | BB Çarpan = 2.0
+    st.markdown("""
+    <div style='background-color:#111827; padding:15px; border-left:4px solid #10b981; margin-bottom:20px;'>
+        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Kurumsal Para (Smart Money) Avcısı Devrede:</div>
+        <div style='color:#9ca3af; font-size:13px;'>Bu strateji günlük tuzakları görmezden gelir. Tüm BIST havuzunda son 5 YILLIK HAFTALIK grafikleri tarar.</div>
+        <div style='color:#10b981; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
+            [+] Koşul 1: 3-4 yıllık devasa düşen trend çizgisinin yukarı kırılması.<br>
+            [+] Koşul 2: Kırılım mumunun yeşil (Kapanış > Açılış) ve güçlü olması.<br>
+            [+] Koşul 3: Hacmin son 1 ayın (4 hafta) ortalamasından en az %50 DAHA YÜKSEK olması.
         </div>
     </div>
     """, unsafe_allow_html=True)
     
+    run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="tab2_btn")
+    
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
-    if run_pine_scan:
+    if run_macro_scan:
         st.session_state.tab2_rows = []
         
         with st.spinner("BIST Sembol verileri senkronize ediliyor..."):
@@ -375,50 +356,45 @@ with tab2:
         else:
             yf_tickers = [f"{s}.IS" for s in bist_symbols]
             
-            with st.spinner(f"Dinamik veri havuzu oluşturuluyor ({len(bist_symbols)} hisse, Periyot: {active_config['yf_interval']})..."):
-                df_all = fetch_bist_data_dynamic_cached(
-                    tickers=yf_tickers, 
-                    period=active_config["yf_period"], 
-                    interval=active_config["yf_interval"]
-                )
+            with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(bist_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
+                # Sadece Haftalık ve 5 Yıllık Veri Çekilir
+                df_all = fetch_macro_bist_data_cached(tickers=yf_tickers)
             
-            with st.spinner("Bollinger destekli kırılım otomasyonu yürütülüyor..."):
+            with st.spinner("Fiyat hareketi ve hacim patlaması taranıyor..."):
                 pine_logs = []
                 pine_console = st.empty()
                 p_bar = st.progress(0)
-                
-                lookback = active_config["lookback"]
-                tv_interval = active_config["tv_interval"]
                 
                 for idx, symbol in enumerate(bist_symbols):
                     p_bar.progress((idx + 1) / len(bist_symbols))
                     ticker = f"{symbol}.IS"
                     
                     if ticker in df_all.columns.levels[0]:
-                        df_symbol = df_all[ticker].dropna(subset=['High', 'Close', 'Open'])
+                        # Hacim verisi eklendiği için Volume sütununu da düşürmüyoruz
+                        df_symbol = df_all[ticker].dropna(subset=['High', 'Close', 'Open', 'Volume'])
                         
-                        is_breakout, context = evaluate_macro_bollinger_breakout(df_symbol, lookback_input=lookback)
+                        is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
                         
                         if is_breakout:
-                            pine_logs.append(f"[⚡ PRO BREAKOUT] {symbol:<6} : Makro trend ve BB onayı alındı.")
+                            pine_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
-                            tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval={tv_interval}"
+                            tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval=W"
                             st.session_state.tab2_rows.append({
                                 "Hisse": symbol,
                                 "Kapanış": round(context["price"], 2),
-                                "BB Üst Bant": round(context["bb_upper"], 2),
                                 "Kırılan Direnç": round(context["trend_val"], 2),
-                                "Mutlak Zirve (P1)": round(context["u_start_p"], 2),
+                                "Tarihi Zirve": round(context["u_start_p"], 2),
+                                "Hacim Patlaması": f"+%{context['vol_increase']:.1f}",
                                 "Bağlantı": tv_url
                             })
                             
-            st.markdown("<div style='color:#0084ff; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write(f"### DİNAMİK TREND KIRILIMI ONAYLANAN HİSRELER ({selected_tab2_tf})")
+        st.write("### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={
-                         "Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")
+                         "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
                      })
