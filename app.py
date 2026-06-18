@@ -519,21 +519,11 @@ with tab3:
 
 # ------------------------- TAB 4 -------------------------
 with tab4:
-    st.write("### ⚡ KUSURSUZ FIRTINA (PERFECT STORM) KESİŞİMİ")
+    st.write("### KESİŞİM")
     col_mkt4, col_btn4 = st.columns([3, 1])
     with col_mkt4: t4_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t4_mkt")
     with col_btn4: st.write("##"); run_perfect_scan = st.button("ALGORİTMAYI ATEŞLE", key="t4_btn")
         
-    st.markdown("""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #ff9900; margin-bottom:20px; margin-top:10px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Otonom Sistem Kesişimi Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Bütün göstergelerin aynı anda pozitif sinyal ürettiği, istatistiksel kazanma şansının en yüksek olduğu hisseleri avlar.</div>
-        <div style='color:#ff9900; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [AŞAMA 1]: Hisse uzun vadeli (Haftalık) devasa bir düşen trendi kırmış ve güvenli bölgeye geçmiş olmalıdır. (Tab-2 Onayı)<br>
-            [AŞAMA 2]: Hisse kısa/orta vadeli (Günlük) ralli sonrası tam kâr alma noktasına (Golden Pocket) düşmüş olmalıdır. (Tab-3 Onayı)
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
     if "tab4_rows" not in st.session_state: st.session_state.tab4_rows = []
     
@@ -583,7 +573,7 @@ with tab4:
 
     if st.session_state.tab4_rows:
         st.write("---")
-        st.write(f"### 🏆 RİSK/ÖDÜL ORANI EN YÜKSEK HİSSELER ({t4_selected_mkt})")
+        st.write(f"### RİSK/ÖDÜL ORANI EN YÜKSEK HİSSELER ({t4_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab4_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
