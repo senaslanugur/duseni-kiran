@@ -234,19 +234,18 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     return False, None
 
 # =============================================================================
-# 5. TAB 3 - OTONOM FIBONACCI RETRACEMENT FONKSİYONLARI (YENİ)
+# 5. TAB 3 - OTONOM FIBONACCI MATRİSİ (AŞAMALI MODEL)
 # =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_fib_data_cached(tickers):
-    # İstatistiksel Fibonacci için son 1 Yıllık Günlük veriler baz alınır
     return yf.download(tickers=tickers, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
 
 def evaluate_auto_fibonacci(df, lookback_bars=252):
     """
-    Sistem Mühendisliği & Trader Modeli:
-    Belirlenen periyottaki (1 yıl = ~252 işlem günü) mutlak dip ve tepeyi bulur.
-    Yükseliş trendinde olduğunu (Dip, Tepeden önce oluşmalı) teyit eder.
-    Altın Oran (0.5 ve 0.618) bölgesine dönüş ve tutunmaları filtreler.
+    Sistem Mühendisliği & Durum Makinesi:
+    1. Geçmişteki ana tepeyi ve dibi bulur.
+    2. Düzeltme (Pullback) aşamasındaysa Altın Bölgeyi tespit eder.
+    3. Zirve kırılmışsa (Breakout) hedefleri 1.618 Uzayına taşır.
     """
     if df is None or len(df) < 50: return False, None
     
@@ -256,20 +255,20 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     closes = df_calc['Close'].values
     opens = df_calc['Open'].values
     
-    # Mutlak Dip ve Tepe Tespiti
+    # Mutlak Dip Tespiti
     min_idx = np.argmin(lows)
-    max_idx = np.argmax(highs)
     
-    # KURAL 1: Yükseliş Trendi Şartı (Dip önce, Tepe sonra gelmeli)
-    if min_idx >= max_idx: return False, None
+    # Zirve Tespiti (Son 15 günü taramadan çıkarıyoruz ki geçmişteki gerçek zirveyi bulalım)
+    if min_idx >= len(highs) - 15: return False, None 
     
-    swing_low = lows[min_idx]
+    max_idx = min_idx + np.argmax(highs[min_idx : -15])
     swing_high = highs[max_idx]
+    swing_low = lows[min_idx]
     diff = swing_high - swing_low
     
     if diff <= 0: return False, None
     
-    # Fibonacci Seviyelerinin Hesaplanması
+    # Fibonacci Ana Serisi
     fib_0 = swing_high
     fib_0236 = swing_high - 0.236 * diff
     fib_0382 = swing_high - 0.382 * diff
@@ -278,34 +277,49 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     fib_0786 = swing_high - 0.786 * diff
     fib_1 = swing_low
     
+    # Fibonacci Uzay (Extension) Hedefleri
+    fib_ext_1618 = swing_high + 0.618 * diff
+    
     curr_close = closes[-1]
     curr_open = opens[-1]
     
-    # KURAL 2: Fiyat Altın Bölgede (Golden Pocket: 0.500 - 0.618) mi? Veya bu bölgeye %1.5 yakın mı?
+    # GEÇMİŞ ONAY: Fiyat bu zirveyi yaptıktan sonra anlamlı bir düzeltme yaşadı mı? (En az %23.6 geri çekilmeli)
+    lowest_since_peak = np.min(lows[max_idx:])
+    valid_pullback = lowest_since_peak <= fib_0236
+    
+    if not valid_pullback:
+        return False, None
+        
+    # --- DURUM A: ALTIN BÖLGE (PULLBACK) ---
+    in_golden_zone = (fib_0618 <= curr_close <= fib_0500)
     dist_0500 = abs(curr_close - fib_0500) / fib_0500
     dist_0618 = abs(curr_close - fib_0618) / fib_0618
-    
-    in_golden_zone = (fib_0618 <= curr_close <= fib_0500)
     near_golden_zone = (dist_0500 < 0.015) or (dist_0618 < 0.015)
-    
-    # KURAL 3: Fiyatın bu bölgeden tepki aldığını kanıtlayan pozitif bir kapanış (Yeşil Mum)
     is_green_candle = curr_close > curr_open
-    
-    # KURAL 4: Ana trend kırılmamış olmalı (0.786'nın üzerinde olmalı)
     valid_trend = curr_close > fib_0786
     
-    if (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend:
-        return True, {
-            "price": curr_close,
-            "fib_0": fib_0,
-            "fib_0236": fib_0236,
-            "fib_0382": fib_0382,
-            "fib_0500": fib_0500,
-            "fib_0618": fib_0618,
-            "fib_1": fib_1
-        }
+    is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
+    
+    # --- DURUM B: TAMAMLANMIŞ RALLİ (ZİRVE KIRILIMI) ---
+    # Fiyat, düzeltmesini bitirip ana zirvesini (Fib 0) kırmışsa:
+    is_breakout = curr_close > swing_high
+    
+    if is_golden_pocket:
+        phase = "🟡 Altın Bölge (Pullback)"
+    elif is_breakout:
+        phase = "🚀 Ralli (Zirve Kırılımı)"
+    else:
+        return False, None
         
-    return False, None
+    return True, {
+        "phase": phase,
+        "price": curr_close,
+        "fib_0": fib_0,
+        "fib_0382": fib_0382,
+        "fib_0500": fib_0500,
+        "fib_0618": fib_0618,
+        "fib_target": fib_ext_1618
+    }
 
 # =============================================================================
 # UI RENDER MİMARİSİ
@@ -314,7 +328,7 @@ st.title("TRADER WORKSTATION")
 tab1, tab2, tab3 = st.tabs([
     "HİBRİT TARAMA", 
     "MAKRO TREND KIRILIMI (3 YIL + HACİM)",
-    "FIBONACCI ALTIN BÖLGE (YENİ)"
+    "FIBONACCI İSTATİSTİK MATRİSİ (YENİ)"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -427,7 +441,7 @@ with tab2:
 
 # ------------------------- TAB 3 -------------------------
 with tab3:
-    st.write("### OTONOM FIBONACCI RETRACEMENT (ALTIN BÖLGE AVCI)")
+    st.write("### OTONOM FIBONACCI DURUM MATRİSİ")
     
     col_mkt3, col_btn3 = st.columns([3, 1])
     with col_mkt3:
@@ -438,11 +452,11 @@ with tab3:
         
     st.markdown("""
     <div style='background-color:#111827; padding:15px; border-left:4px solid #8b5cf6; margin-bottom:20px; margin-top:10px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Matematiksel Dönüş Modeli Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Son 1 yıllık günlük veriler taranarak, net bir yükseliş trendi sonrasında düzeltme yapan (pullback) hisseler analiz edilir.</div>
+        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>İstatistiksel Geri Çekilme ve Ralli Modeli Devrede:</div>
+        <div style='color:#9ca3af; font-size:13px;'>Son 1 yıllık günlük veriler taranır. Piyasayı 2 farklı Matematiksel Faza göre sınıflandırır:</div>
         <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [+] İstatistiksel Hedef: Fiyatın "Golden Pocket" (0.500 ile 0.618 arası) bölgesine gelmesi veya çok yaklaşması.<br>
-            [+] Teyit: Bu kritik bölgede yeşil bir mum (Kapanış > Açılış) ile tepki alıcıların devreye girmesi.
+            [DURUM A]: "Altın Bölge (Pullback)" - Fiyat düzeltme yaparak 0.500 ile 0.618 arasına gelmiş ve alım tepkisi almıştır.<br>
+            [DURUM B]: "Ralli (Zirve Kırılımı)" - Fiyat düzeltmesini bitirip eski zirvesini (Fib 0) yukarı yönlü kırmıştır. Uzay hedefi 1.618'dir.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -464,7 +478,7 @@ with tab3:
             with st.spinner(f"Günlük veri havuzu oluşturuluyor ({len(market_symbols)} hisse, 1 Yıllık Veri)..."):
                 df_all = fetch_fib_data_cached(tickers=yf_tickers)
             
-            with st.spinner("Fibonacci matrisi hesaplanıyor ve alım fırsatları taranıyor..."):
+            with st.spinner("Fibonacci matrisi hesaplanıyor ve döngü aşamaları (Pullback/Breakout) sınıflandırılıyor..."):
                 p_bar = st.progress(0)
                 
                 for idx, symbol in enumerate(market_symbols):
@@ -474,32 +488,38 @@ with tab3:
                     if yf_ticker_key in df_all.columns.levels[0]:
                         df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open'])
                         
-                        is_golden_pocket, context = evaluate_auto_fibonacci(df_symbol)
+                        is_fib_setup, context = evaluate_auto_fibonacci(df_symbol)
                         
-                        if is_golden_pocket:
+                        if is_fib_setup:
                             tv_url = f"https://www.tradingview.com/chart/?symbol={mkt_config['tv_prefix']}{symbol}&interval=D"
                             
                             st.session_state.tab3_rows.append({
+                                "Aşama / Durum": context["phase"],
                                 "Hisse": symbol,
                                 "Güncel Fiyat": round(context["price"], 2),
                                 "Tepe (0)": round(context["fib_0"], 2),
-                                "Fib 0.236": round(context["fib_0236"], 2),
                                 "Fib 0.382": round(context["fib_0382"], 2),
-                                "Altın Oran (0.500)": round(context["fib_0500"], 2),
-                                "Altın Oran (0.618)": round(context["fib_0618"], 2),
-                                "Dip (1)": round(context["fib_1"], 2),
+                                "Fib 0.618": round(context["fib_0618"], 2),
+                                "Uzay Hedefi (1.618)": round(context["fib_target"], 2),
                                 "Bağlantı": tv_url
                             })
                             
-            st.markdown("<div style='color:#8b5cf6; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Fibonacci taraması tamamlandı.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:#8b5cf6; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Döngü ve Fibonacci taraması tamamlandı.</div>", unsafe_allow_html=True)
 
     if st.session_state.tab3_rows:
         st.write("---")
-        st.write(f"### 🎯 ALTIN BÖLGEDEN TEPKİ ALAN HİSSELER ({t3_selected_mkt})")
-        st.dataframe(pd.DataFrame(st.session_state.tab3_rows), use_container_width=True, hide_index=True,
+        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK KUSURSUZ DÖNGÜDEKİ HİSSELER ({t3_selected_mkt})")
+        
+        # DataFrame formatlaması (Aşamaya göre sıralı gelsin diye)
+        res_df = pd.DataFrame(st.session_state.tab3_rows)
+        res_df = res_df.sort_values(by="Aşama / Durum")
+        
+        st.dataframe(res_df, use_container_width=True, hide_index=True,
                      column_config={
+                         "Aşama / Durum": st.column_config.TextColumn("Döngü Aşaması", width="medium"),
                          "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
-                         "Altın Oran (0.500)": st.column_config.NumberColumn("Altın Oran (0.500)", format="%.2f", help="Güçlü Alım Bölgesi"),
-                         "Altın Oran (0.618)": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum Geri Çekilme Sınırı"),
+                         "Tepe (0)": st.column_config.NumberColumn("Eski Zirve (0)", format="%.2f", help="Aşılması gereken veya aşılan zirve"),
+                         "Fib 0.618": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum Geri Çekilme Desteği"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Zirve kırılımı sonrası istatistiksel ana direnç"),
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Günlük)", display_text="Grafiği Aç")
                      })
