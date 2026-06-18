@@ -15,8 +15,8 @@ import random
 # 1. Sayfa Konfigürasyonu (Geniş Ekran ve Koyu Bloomberg Teması)
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Bloomberg Hybrid Screener Workstation",
-    page_icon="⚡",
+    page_title="Screener Workstation",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -253,9 +253,9 @@ def evaluate_pine_script_logic(df, left_bars, right_bars):
 # -----------------------------------------------------------------------------
 # 5. Streamlit UI Tasarımı ve Sekmeler
 # -----------------------------------------------------------------------------
-st.title("📊 TRADER WORKSTATION: SİSTEM MİMARİSİ")
+st.title("TRADER WORKSTATION: TARAMA"")
 
-tab1, tab2 = st.tabs(["📈 1. Hibrit Tarama (Hacim + İndikatör)", "📉 2. Düşeni Kıran (Pine Script Pivot)"])
+tab1, tab2 = st.tabs(["Hibrit Tarama", "Düşeni Kıran"])
 
 # ==========================================
 # TAB 1: HİBRİT TARAMA SİSTEMİ
@@ -334,8 +334,8 @@ with tab1:
 # TAB 2: PINE SCRIPT (PIVOT BREAKOUT) SİSTEMİ
 # ==========================================
 with tab2:
-    st.write("### 📉 Düşeni Kıran (Trend Kırılımı) Tarama Modülü")
-    st.info("Pine Script algoritmasındaki 'Pivot Zirveler' hesaplaması lokal olarak yürütülmektedir. Çoklu veri çekimi sunucu tarafında önbelleklenir (Cache TTL: 1 Saat).")
+    st.write("### Düşeni Kıran (Trend Kırılımı) Tarama Modülü")
+    st.info("Çoklu veri çekimi sunucu tarafında önbelleklenir.")
     
     col_p1, col_p2, col_p3 = st.columns(3)
     left_bars = col_p1.number_input("Sol Pivot Bar Sayısı (leftBars)", min_value=1, value=10)
@@ -375,7 +375,7 @@ with tab2:
                         is_breakout, context = evaluate_pine_script_logic(df_symbol, left_bars, right_bars)
                         
                         if is_breakout:
-                            pine_logs.append(f"[🔥 BREAKOUT] {symbol:<6} - Düşen trendi kırdı!")
+                            pine_logs.append(f"[BREAKOUT] {symbol:<6} - Düşen trendi kırdı!")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
                             tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval=D"
@@ -392,6 +392,6 @@ with tab2:
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write("### 🏆 Düşen Trendi Kıran Hisseler")
+        st.write("### Düşen Trendi Kıran Hisseler")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={"TradingView 🌐": st.column_config.LinkColumn("Grafiğe Git ↗")})
