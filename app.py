@@ -253,7 +253,7 @@ def evaluate_pine_script_logic(df, left_bars, right_bars):
 # -----------------------------------------------------------------------------
 # 5. Streamlit UI Tasarımı ve Sekmeler
 # -----------------------------------------------------------------------------
-st.title("TRADER WORKSTATION: TARAMA"")
+st.title("TRADER WORKSTATION: TARAMA")
 
 tab1, tab2 = st.tabs(["Hibrit Tarama", "Düşeni Kıran"])
 
