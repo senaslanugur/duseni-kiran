@@ -374,7 +374,7 @@ with tab1:
         
                 if is_matched:
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
-                    macd_status = f"NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
+                    macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"🟢 POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
                     tv_prefix = mkt_config["tv_prefix"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
                     
@@ -436,7 +436,7 @@ with tab2:
             st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
             
     if st.session_state.tab2_rows:
-        st.write("---"); st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
+        st.write("---"); st.write(f"### HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")})
 
 # ------------------------- TAB 3 -------------------------
@@ -508,7 +508,7 @@ with tab3:
 
     if st.session_state.tab3_rows:
         st.write("---")
-        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK KUSURSUZ DÖNGÜDEKİ HİSSELER ({t3_selected_mkt})")
+        st.write(f"### İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t3_selected_mkt})")
         
         # DataFrame formatlaması (Aşamaya göre sıralı gelsin diye)
         res_df = pd.DataFrame(st.session_state.tab3_rows)
