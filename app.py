@@ -241,12 +241,6 @@ def fetch_fib_data_cached(tickers):
     return yf.download(tickers=tickers, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
 
 def evaluate_auto_fibonacci(df, lookback_bars=252):
-    """
-    Sistem Mühendisliği & Durum Makinesi:
-    1. Geçmişteki ana tepeyi ve dibi bulur.
-    2. Düzeltme (Pullback) aşamasındaysa Altın Bölgeyi tespit eder.
-    3. Zirve kırılmışsa (Breakout) hedefleri 1.618 Uzayına taşır.
-    """
     if df is None or len(df) < 50: return False, None
     
     df_calc = df.tail(lookback_bars).copy()
@@ -255,10 +249,7 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     closes = df_calc['Close'].values
     opens = df_calc['Open'].values
     
-    # Mutlak Dip Tespiti
     min_idx = np.argmin(lows)
-    
-    # Zirve Tespiti (Son 15 günü taramadan çıkarıyoruz ki geçmişteki gerçek zirveyi bulalım)
     if min_idx >= len(highs) - 15: return False, None 
     
     max_idx = min_idx + np.argmax(highs[min_idx : -15])
@@ -268,7 +259,6 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     
     if diff <= 0: return False, None
     
-    # Fibonacci Ana Serisi
     fib_0 = swing_high
     fib_0236 = swing_high - 0.236 * diff
     fib_0382 = swing_high - 0.382 * diff
@@ -276,21 +266,16 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     fib_0618 = swing_high - 0.618 * diff
     fib_0786 = swing_high - 0.786 * diff
     fib_1 = swing_low
-    
-    # Fibonacci Uzay (Extension) Hedefleri
     fib_ext_1618 = swing_high + 0.618 * diff
     
     curr_close = closes[-1]
     curr_open = opens[-1]
     
-    # GEÇMİŞ ONAY: Fiyat bu zirveyi yaptıktan sonra anlamlı bir düzeltme yaşadı mı? (En az %23.6 geri çekilmeli)
     lowest_since_peak = np.min(lows[max_idx:])
     valid_pullback = lowest_since_peak <= fib_0236
     
-    if not valid_pullback:
-        return False, None
+    if not valid_pullback: return False, None
         
-    # --- DURUM A: ALTIN BÖLGE (PULLBACK) ---
     in_golden_zone = (fib_0618 <= curr_close <= fib_0500)
     dist_0500 = abs(curr_close - fib_0500) / fib_0500
     dist_0618 = abs(curr_close - fib_0618) / fib_0618
@@ -299,36 +284,84 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     valid_trend = curr_close > fib_0786
     
     is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
-    
-    # --- DURUM B: TAMAMLANMIŞ RALLİ (ZİRVE KIRILIMI) ---
-    # Fiyat, düzeltmesini bitirip ana zirvesini (Fib 0) kırmışsa:
     is_breakout = curr_close > swing_high
     
-    if is_golden_pocket:
-        phase = "🟡 Pullback"
-    elif is_breakout:
-        phase = "Zirve Kırılımı"
-    else:
-        return False, None
+    if is_golden_pocket: phase = "🟡 Pullback"
+    elif is_breakout: phase = "Zirve Kırılımı"
+    else: return False, None
         
     return True, {
-        "phase": phase,
-        "price": curr_close,
-        "fib_0": fib_0,
-        "fib_0382": fib_0382,
-        "fib_0500": fib_0500,
-        "fib_0618": fib_0618,
-        "fib_target": fib_ext_1618
+        "phase": phase, "price": curr_close, "fib_0": fib_0, "fib_0382": fib_0382,
+        "fib_0500": fib_0500, "fib_0618": fib_0618, "fib_target": fib_ext_1618
     }
+
+# =============================================================================
+# 6. TAB 4 - KUSURSUZ FIRTINA (PERFECT STORM) KOMBİNASYONU
+# =============================================================================
+def evaluate_perfect_storm(df_weekly, df_daily, macro_lookback=200, fib_lookback=252):
+    """
+    Sistem Mühendisliği Zirvesi:
+    Hisse günlük periyotta Kusursuz bir Altın Bölge Pullback'indeyken (Tab-3),
+    Aynı hissenin haftalıkta da devasa bir düşen trendi kırmış ve hala üzerinde 
+    tutunuyor olduğunu (Tab-2 geçmisi) teyit eder.
+    """
+    # 1. Aşama: Günlükte Fibonacci Altın Bölgede (Pullback) mi?
+    is_fib, fib_context = evaluate_auto_fibonacci(df_daily, lookback_bars=fib_lookback)
+    if not is_fib or "Pullback" not in fib_context["phase"]:
+        return False, None
+        
+    # 2. Aşama: Haftalıkta Makro Düşen Trend kırılmış ve üzerinde mi?
+    if df_weekly is None or len(df_weekly) < macro_lookback + 5:
+        return False, None
+        
+    highs = df_weekly['High'].values
+    closes = df_weekly['Close'].values
+    curr_idx = len(highs) - 1
+    
+    # Makro tepeyi bul
+    start_search = max(0, curr_idx - macro_lookback)
+    u_start_b = start_search + np.argmax(highs[start_search:curr_idx])
+    u_start_p = highs[u_start_b]
+    
+    max_u_slope = -np.inf
+    u_sec_b = -1
+    
+    # Trendi bul (Trendin en az 1 ay = 4 hafta önce oluşmuş olmasını istiyoruz)
+    search_end = max(u_start_b + 1, curr_idx - 4)
+    for i in range(u_start_b + 1, search_end):
+        slope = (highs[i] - u_start_p) / (i - u_start_b)
+        if slope < 0 and slope > max_u_slope:
+            max_u_slope = slope
+            u_sec_b = i
+            
+    if u_sec_b == -1: return False, None
+        
+    # Güncel bar için trend çizgisi direnci
+    curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
+    
+    # KESİN ONAY: Fiyat makro düşen trendin de net bir şekilde (en az %2) üzerinde mi?
+    is_above_macro_trend = closes[curr_idx] > (curr_trendline * 1.02)
+    
+    if is_above_macro_trend:
+        return True, {
+            "price": fib_context["price"],
+            "fib_0618": fib_context["fib_0618"],
+            "fib_0500": fib_context["fib_0500"],
+            "macro_trend_val": curr_trendline,
+            "macro_peak": u_start_p,
+            "fib_target": fib_context["fib_target"]
+        }
+    return False, None
 
 # =============================================================================
 # UI RENDER MİMARİSİ
 # =============================================================================
 st.title("TRADER WORKSTATION")
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
     "MAKRO TREND KIRILIMI",
-    "FIBONACCI İSTATİSTİK MATRİSİ"
+    "FIBONACCI İSTATİSTİK MATRİSİ",
+    "⚡ KUSURSUZ FIRTINA (T2 + T3)"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -397,7 +430,6 @@ with tab2:
     with col_mkt2: t2_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t2_mkt")
     with col_btn2: st.write("##"); run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
     
-    
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
     if run_macro_scan:
@@ -431,15 +463,10 @@ with tab2:
 # ------------------------- TAB 3 -------------------------
 with tab3:
     st.write("### OTONOM FIBONACCI DURUM MATRİSİ")
-    
     col_mkt3, col_btn3 = st.columns([3, 1])
-    with col_mkt3:
-        t3_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t3_mkt")
-    with col_btn3:
-        st.write("##")
-        run_fib_scan = st.button("FIBONACCI MATRİSİNİ ÇALIŞTIR", key="t3_btn")
+    with col_mkt3: t3_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t3_mkt")
+    with col_btn3: st.write("##"); run_fib_scan = st.button("FIBONACCI MATRİSİNİ ÇALIŞTIR", key="t3_btn")
         
-    
     if "tab3_rows" not in st.session_state: st.session_state.tab3_rows = []
     
     if run_fib_scan:
@@ -459,28 +486,18 @@ with tab3:
             
             with st.spinner("Fibonacci matrisi hesaplanıyor ve döngü aşamaları (Pullback/Breakout) sınıflandırılıyor..."):
                 p_bar = st.progress(0)
-                
                 for idx, symbol in enumerate(market_symbols):
                     p_bar.progress((idx + 1) / len(market_symbols))
                     yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
                     
                     if yf_ticker_key in df_all.columns.levels[0]:
                         df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open'])
-                        
                         is_fib_setup, context = evaluate_auto_fibonacci(df_symbol)
                         
                         if is_fib_setup:
                             tv_url = f"https://www.tradingview.com/chart/?symbol={mkt_config['tv_prefix']}{symbol}&interval=D"
-                            
                             st.session_state.tab3_rows.append({
-                                "Aşama / Durum": context["phase"],
-                                "Hisse": symbol,
-                                "Güncel Fiyat": round(context["price"], 2),
-                                "Tepe (0)": round(context["fib_0"], 2),
-                                "Fib 0.382": round(context["fib_0382"], 2),
-                                "Fib 0.618": round(context["fib_0618"], 2),
-                                "Uzay Hedefi (1.618)": round(context["fib_target"], 2),
-                                "Bağlantı": tv_url
+                                "Aşama / Durum": context["phase"], "Hisse": symbol, "Güncel Fiyat": round(context["price"], 2), "Tepe (0)": round(context["fib_0"], 2), "Fib 0.382": round(context["fib_0382"], 2), "Fib 0.618": round(context["fib_0618"], 2), "Uzay Hedefi (1.618)": round(context["fib_target"], 2), "Bağlantı": tv_url
                             })
                             
             st.markdown("<div style='color:#8b5cf6; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Döngü ve Fibonacci taraması tamamlandı.</div>", unsafe_allow_html=True)
@@ -488,11 +505,8 @@ with tab3:
     if st.session_state.tab3_rows:
         st.write("---")
         st.write(f"### İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t3_selected_mkt})")
-        
-        # DataFrame formatlaması (Aşamaya göre sıralı gelsin diye)
         res_df = pd.DataFrame(st.session_state.tab3_rows)
         res_df = res_df.sort_values(by="Aşama / Durum")
-        
         st.dataframe(res_df, use_container_width=True, hide_index=True,
                      column_config={
                          "Aşama / Durum": st.column_config.TextColumn("Döngü Aşaması", width="medium"),
@@ -500,5 +514,81 @@ with tab3:
                          "Tepe (0)": st.column_config.NumberColumn("Eski Zirve (0)", format="%.2f", help="Aşılması gereken veya aşılan zirve"),
                          "Fib 0.618": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum Geri Çekilme Desteği"),
                          "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Zirve kırılımı sonrası istatistiksel ana direnç"),
+                         "Bağlantı": st.column_config.LinkColumn("TradingView (Günlük)", display_text="Grafiği Aç")
+                     })
+
+# ------------------------- TAB 4 -------------------------
+with tab4:
+    st.write("### ⚡ KUSURSUZ FIRTINA (PERFECT STORM) KESİŞİMİ")
+    col_mkt4, col_btn4 = st.columns([3, 1])
+    with col_mkt4: t4_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t4_mkt")
+    with col_btn4: st.write("##"); run_perfect_scan = st.button("ALGORİTMAYI ATEŞLE", key="t4_btn")
+        
+    st.markdown("""
+    <div style='background-color:#111827; padding:15px; border-left:4px solid #ff9900; margin-bottom:20px; margin-top:10px;'>
+        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Otonom Sistem Kesişimi Devrede:</div>
+        <div style='color:#9ca3af; font-size:13px;'>Bütün göstergelerin aynı anda pozitif sinyal ürettiği, istatistiksel kazanma şansının en yüksek olduğu hisseleri avlar.</div>
+        <div style='color:#ff9900; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
+            [AŞAMA 1]: Hisse uzun vadeli (Haftalık) devasa bir düşen trendi kırmış ve güvenli bölgeye geçmiş olmalıdır. (Tab-2 Onayı)<br>
+            [AŞAMA 2]: Hisse kısa/orta vadeli (Günlük) ralli sonrası tam kâr alma noktasına (Golden Pocket) düşmüş olmalıdır. (Tab-3 Onayı)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if "tab4_rows" not in st.session_state: st.session_state.tab4_rows = []
+    
+    if run_perfect_scan:
+        mkt_config = MARKET_CONFIGS[t4_selected_mkt]
+        st.session_state.tab4_rows = []
+        
+        with st.spinner(f"{t4_selected_mkt} Sembol verileri senkronize ediliyor..."):
+            market_symbols = get_all_market_symbols(mkt_config)
+            
+        if not market_symbols:
+            st.markdown("<div style='color:#ef4444; font-family:Inter; font-weight:600;'>[SİSTEM HATASI] Bağlantı hatası.</div>", unsafe_allow_html=True)
+        else:
+            yf_tickers = [f"{s.replace('.', '-')}{mkt_config['yf_suffix']}" for s in market_symbols]
+            
+            with st.spinner("Makro Veri (5 Yıllık) ve Mikro Veri (1 Yıllık) Çoklu Havuzu Oluşturuluyor..."):
+                # Eşzamanlı iki havuz çekimi
+                df_weekly_all = fetch_macro_data_cached(tickers=yf_tickers)
+                df_daily_all = fetch_fib_data_cached(tickers=yf_tickers)
+                
+            with st.spinner("Çoklu zaman dilimi (Multi-Timeframe) kesişim matrisi hesaplanıyor..."):
+                p_bar = st.progress(0)
+                
+                for idx, symbol in enumerate(market_symbols):
+                    p_bar.progress((idx + 1) / len(market_symbols))
+                    yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
+                    
+                    if (yf_ticker_key in df_weekly_all.columns.levels[0]) and (yf_ticker_key in df_daily_all.columns.levels[0]):
+                        df_w = df_weekly_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open', 'Volume'])
+                        df_d = df_daily_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open'])
+                        
+                        is_perfect, context = evaluate_perfect_storm(df_w, df_d)
+                        
+                        if is_perfect:
+                            tv_url = f"https://www.tradingview.com/chart/?symbol={mkt_config['tv_prefix']}{symbol}&interval=D"
+                            st.session_state.tab4_rows.append({
+                                "Hisse": symbol,
+                                "Güncel Fiyat": round(context["price"], 2),
+                                "Aşılan Makro Direnç": round(context["macro_trend_val"], 2),
+                                "Fibonacci 0.500": round(context["fib_0500"], 2),
+                                "Fibonacci 0.618": round(context["fib_0618"], 2),
+                                "Uzay Hedefi (1.618)": round(context["fib_target"], 2),
+                                "Bağlantı": tv_url
+                            })
+                            
+            st.markdown("<div style='color:#ff9900; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Kusursuz Fırtına taraması tamamlandı.</div>", unsafe_allow_html=True)
+
+    if st.session_state.tab4_rows:
+        st.write("---")
+        st.write(f"### 🏆 RİSK/ÖDÜL ORANI EN YÜKSEK HİSSELER ({t4_selected_mkt})")
+        st.dataframe(pd.DataFrame(st.session_state.tab4_rows), use_container_width=True, hide_index=True,
+                     column_config={
+                         "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
+                         "Aşılan Makro Direnç": st.column_config.NumberColumn("Aşılan Makro Direnç", format="%.2f", help="Hissenin artık üzerinde tutunduğu tarihi düşen trend çizgisi"),
+                         "Fibonacci 0.618": st.column_config.NumberColumn("Fibonacci 0.618", format="%.2f", help="Günlükteki maksimum destek sınırı"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Yükselişin devamındaki istatistiksel varış noktası"),
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Günlük)", display_text="Grafiği Aç")
                      })
