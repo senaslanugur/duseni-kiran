@@ -6,6 +6,9 @@ import time
 import random
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib
+matplotlib.use('Agg') # Sunucu ortamında grafik çizimi için zorunlu ayar
+import matplotlib.pyplot as plt
 
 # -----------------------------------------------------------------------------
 # 1. Sayfa Konfigürasyonu (Geniş Ekran ve Koyu Bloomberg Teması)
