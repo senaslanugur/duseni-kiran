@@ -361,7 +361,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
     "MAKRO TREND KIRILIMI",
     "FIBONACCI İSTATİSTİK MATRİSİ",
-    "⚡ KUSURSUZ FIRTINA (T2 + T3)"
+    "KESİŞİM"
 ])
 
 # ------------------------- TAB 1 -------------------------
