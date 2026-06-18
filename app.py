@@ -338,8 +338,8 @@ with tab2:
     st.info("Pine Script algoritmasındaki 'Pivot Zirveler' hesaplaması lokal olarak yürütülmektedir. Çoklu veri çekimi sunucu tarafında önbelleklenir (Cache TTL: 1 Saat).")
     
     col_p1, col_p2, col_p3 = st.columns(3)
-    left_bars = col_p1.number_input("Sol Pivot Bar Sayısı (leftBars)", minval=1, value=10)
-    right_bars = col_p2.number_input("Sağ Pivot Bar Sayısı (rightBars)", minval=1, value=2)
+    left_bars = col_p1.number_input("Sol Pivot Bar Sayısı (leftBars)", min_value=1, value=10)
+    right_bars = col_p2.number_input("Sağ Pivot Bar Sayısı (rightBars)", min_value=1, value=2)
     
     st.write("##")
     run_pine_scan = st.button("PINE SCRIPT ALGORİTMASINI TETİKLE 🚀", key="tab2_btn")
