@@ -65,8 +65,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# TAB 1 - MEVCUT KONFİGÜRASYON (DOKUNULMADI)
+# 2. GLOBAL KONFİGÜRASYONLAR (PİYASA VE PERİYOT)
 # -----------------------------------------------------------------------------
+MARKET_CONFIGS = {
+    "Türkiye (BIST)": {
+        "tv_market": "turkey",
+        "yf_suffix": ".IS",
+        "tv_prefix": "BIST:"
+    },
+    "Amerika (ABD)": {
+        "tv_market": "america",
+        "yf_suffix": "",
+        "tv_prefix": "" # TradingView ABD hisselerini sembol adıyla doğrudan tanır
+    }
+}
+
 TIMEFRAME_CONFIGS = {
     "4 Saatlik (4H)": {"tv_suffix": "|240", "tv_interval": "240", "yf_interval": "1h", "resample_rule": "4h", "period": "3mo"},
     "1 Günlük (1D)": {"tv_suffix": "", "tv_interval": "D", "yf_interval": "1d", "resample_rule": None, "period": "1y"},
@@ -78,14 +91,14 @@ def safe_fmt(val, fmt=".2f"):
     return f"{val:{fmt}}"
 
 # =============================================================================
-# ORTAK VERİ VE TAB 1 FONKSİYONLARI (DOKUNULMADI)
+# 3. ORTAK VERİ VE TAB 1 FONKSİYONLARI 
 # =============================================================================
-def scan_tradingview_by_timeframe(tf_config):
-    url = "https://scanner.tradingview.com/turkey/scan"
+def scan_tradingview_by_timeframe(tf_config, mkt_config):
+    url = f"https://scanner.tradingview.com/{mkt_config['tv_market']}/scan"
     sfx = tf_config["tv_suffix"]
     payload = {
         "filter": [
-            {"left": "market", "operation": "equal", "right": "turkey"},
+            {"left": "market", "operation": "equal", "right": mkt_config['tv_market']},
             {"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]},
             {"left": f"RSI{sfx}", "operation": "greater", "right": 50},
             {"left": f"MACD.macd{sfx}", "operation": "greater", "right": f"MACD.signal{sfx}"},
@@ -93,10 +106,11 @@ def scan_tradingview_by_timeframe(tf_config):
             {"left": f"close{sfx}", "operation": "greater", "right": f"SMA50{sfx}"},
             {"left": f"close{sfx}", "operation": "greater", "right": f"SMA200{sfx}"}
         ],
-        "options": {"lang": "en"}, "markets": ["turkey"],
+        "options": {"lang": "en"}, "markets": [mkt_config['tv_market']],
         "symbols": {"query": {"types": []}, "tickers": []},
         "columns": ["name", f"close{sfx}", f"RSI{sfx}", f"MACD.macd{sfx}", f"MACD.signal{sfx}", f"SMA20{sfx}", f"SMA50{sfx}", f"SMA200{sfx}"],
-        "sort": {"sortBy": "name", "sortOrder": "asc"}, "range": [0, 450]
+        "sort": {"sortBy": "name", "sortOrder": "asc"}, 
+        "range": [0, 450] # ABD'de bile olsa hacimli/momentumlu ilk 450 yeterlidir
     }
     try:
         response = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
@@ -106,9 +120,13 @@ def scan_tradingview_by_timeframe(tf_config):
         return {}
     except Exception: return {}
 
-def check_yfinance_volume_condition(symbol, tf_config):
+def check_yfinance_volume_condition(symbol, tf_config, mkt_config):
+    # ABD hisselerindeki nokta işaretini (örn: BRK.B) Yahoo formatına (BRK-B) çevirir
+    clean_symbol = symbol.replace('.', '-')
+    yf_ticker = f"{clean_symbol}{mkt_config['yf_suffix']}"
+    
     try:
-        df = yf.download(tickers=f"{symbol}.IS", period=tf_config["period"], interval=tf_config["yf_interval"], progress=False)
+        df = yf.download(tickers=yf_ticker, period=tf_config["period"], interval=tf_config["yf_interval"], progress=False)
         if df.empty: return False, None, None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df.columns = [c.lower() for c in df.columns]
@@ -171,25 +189,32 @@ def draw_trader_chart(symbol, df_target):
     plt.tight_layout()
     return fig
 
-def get_all_bist_symbols():
+# =============================================================================
+# 4. TAB 2 - MAKRO TREND FONKSİYONLARI
+# =============================================================================
+def get_all_market_symbols(mkt_config):
+    url = f"https://scanner.tradingview.com/{mkt_config['tv_market']}/scan"
+    payload = {
+        "filter": [{"left": "type", "operation": "in_range", "right": ["stock"]}],
+        "options": {"lang": "en"}, 
+        "markets": [mkt_config['tv_market']],
+        "symbols": {"query": {"types": []}, "tickers": []},
+        "columns": ["name", "market_cap_basic"],
+        # ABD Borsası 8000+ hisse içerir. Sistemi çökertmemek için Piyasa Değerine göre en büyük 600 hisse alınır.
+        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"}, 
+        "range": [0, 600]
+    }
     try:
-        resp = requests.post("https://scanner.tradingview.com/turkey/scan", json={"filter": [{"left": "type", "operation": "in_range", "right": ["stock"]}], "options": {"lang": "en"}, "markets": ["turkey"], "symbols": {"query": {"types": []}, "tickers": []}, "columns": ["name"], "range": [0, 600]}, headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         if resp.status_code == 200: return [item["d"][0] for item in resp.json().get("data", [])]
     except: pass
     return []
 
-# =============================================================================
-# TAB 2 - TRADER MANTIĞI: 3 YILLIK MAKRO TREND VE HACİM ONAYI
-# =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_macro_bist_data_cached(tickers):
-    # Makro görünüm için tam 5 yıllık haftalık mumlar indirilir.
+def fetch_macro_data_cached(tickers):
     return yf.download(tickers=tickers, period="5y", interval="1wk", group_by="ticker", threads=True, progress=False)
 
 def evaluate_macro_trader_breakout(df, lookback_bars=200):
-    """
-    Trader stratejisi: 3-4 Yıllık devasa bir baskının hacimli kırılıp kırılmadığını kontrol eder.
-    """
     if df is None or len(df) < lookback_bars + 5: 
         return False, None
     
@@ -201,12 +226,10 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     curr_idx = len(highs) - 1
     prev_idx = curr_idx - 1
     
-    # 1. Ana Tepeyi (Tarihi Zirveyi) Bul
     start_search = max(0, curr_idx - lookback_bars)
     u_start_b = start_search + np.argmax(highs[start_search:curr_idx])
     u_start_p = highs[u_start_b]
     
-    # 2. En dıştaki teğet noktasını (Sert Satış Direncini) Bul
     max_u_slope = -np.inf
     u_sec_b = -1
     u_sec_p = -1
@@ -221,24 +244,15 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     if u_sec_b == -1: 
         return False, None
         
-    # 3. Kırılım Çizgisini (Direnci) Hesapla
     prev_trendline = u_start_p + max_u_slope * (prev_idx - u_start_b)
     curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
     
-    # ---------------------------------------------------------
-    # 4. TRADER KOŞULLARI (FİYAT + HACİM)
-    # ---------------------------------------------------------
-    # A. Fiyat Kırılımı: Önceki hafta altında, bu hafta üstünde mi?
     line_crossed = (closes[prev_idx] <= prev_trendline) and (closes[curr_idx] > curr_trendline)
-    
-    # B. Yeşil/Alıcılı Mum: Kapanış açılışın üzerinde mi? (Satış yiyip fitil bırakmamış olmalı)
     is_green_candle = closes[curr_idx] > opens[curr_idx]
     
-    # C. Hacim Şoku (Smart Money Onayı): Son 1 ayın (4 hafta) ortalama hacmi
     avg_vol_1m = np.mean(volumes[curr_idx-4 : curr_idx])
     curr_vol = volumes[curr_idx]
     
-    # Hacim, son 1 ayın ortalamasından en az %50 fazla olmalı (Sıfıra bölünme hatasını engelle)
     is_volume_backed = False
     vol_increase_pct = 0
     if avg_vol_1m > 0:
@@ -264,9 +278,14 @@ tab1, tab2 = st.tabs(["HİBRİT TARAMA", "MAKRO TREND KIRILIMI (3 YIL + HACİM)"
 
 # ------------------------- TAB 1 -------------------------
 with tab1:
-    col_tf, col_btn = st.columns([3, 1])
-    with col_tf: selected_tf = st.selectbox("Zaman Periyodu:", list(TIMEFRAME_CONFIGS.keys()), index=1)
-    with col_btn: st.write("##"); execute_scan = st.button("TARAMAYI BAŞLAT")
+    # 3'lü Kontrol Paneli: Piyasa - Periyot - Buton
+    col_mkt, col_tf, col_btn = st.columns([2, 2, 1])
+    with col_mkt:
+        t1_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t1_mkt")
+    with col_tf: 
+        selected_tf = st.selectbox("Zaman Periyodu:", list(TIMEFRAME_CONFIGS.keys()), index=1)
+    with col_btn: 
+        st.write("##"); execute_scan = st.button("TARAMAYI BAŞLAT", key="t1_btn")
 
     if "final_rows" not in st.session_state: st.session_state.final_rows = []
     if "stored_dfs" not in st.session_state: st.session_state.stored_dfs = {}
@@ -274,6 +293,7 @@ with tab1:
 
     if execute_scan:
         tf_config = TIMEFRAME_CONFIGS[selected_tf]
+        mkt_config = MARKET_CONFIGS[t1_selected_mkt]
         st.session_state.last_tf = selected_tf
         st.session_state.final_rows = []
         st.session_state.stored_dfs = {}
@@ -283,7 +303,7 @@ with tab1:
         progress_bar = st.progress(0)
         
         with st.spinner("TradingView API ile iletişim kuruluyor..."):
-            tv_passed_stocks = scan_tradingview_by_timeframe(tf_config)
+            tv_passed_stocks = scan_tradingview_by_timeframe(tf_config, mkt_config)
             
         if not tv_passed_stocks:
             st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Belirtilen kriterlerde hisse bulunamadı.</div>", unsafe_allow_html=True)
@@ -294,7 +314,7 @@ with tab1:
             
             for idx, (symbol, tv_data) in enumerate(tv_passed_stocks.items()):
                 progress_bar.progress((idx + 1) / total_len)
-                is_matched, v_data, df_target = check_yfinance_volume_condition(symbol, tf_config)
+                is_matched, v_data, df_target = check_yfinance_volume_condition(symbol, tf_config, mkt_config)
                 time.sleep(random.uniform(0.05, 0.15)) 
                 
                 if v_data is None:
@@ -307,9 +327,11 @@ with tab1:
                     live_logs.append(f"[OK]   {symbol:<6} : V1:{v1_f} < V2:{v2_f} < V3:{v3_f} (Hacim Onaylandı)")
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
                     macd_status = f"NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
-                    tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval={tf_config['tv_interval']}"
                     
-                    st.session_state.final_rows.append({"Hisse": symbol, "Fiyat (TL)": round(v_data["price"], 2), "RSI (50+)": round(tv_data["rsi"], 1), "MACD Durumu": macd_status, "SMA (20/50/200)": f"{safe_fmt(tv_data['sma20'], '.1f')} / {safe_fmt(tv_data['sma50'], '.1f')} / {safe_fmt(tv_data['sma200'], '.1f')}", "V1 (T-2)": v1_f, "V2 (T-1)": v2_f, "V3 (Güncel)": v3_f, "Bağlantı": tv_url})
+                    tv_prefix = mkt_config["tv_prefix"]
+                    tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
+                    
+                    st.session_state.final_rows.append({"Hisse": symbol, "Fiyat": round(v_data["price"], 2), "RSI (50+)": round(tv_data["rsi"], 1), "MACD Durumu": macd_status, "SMA (20/50/200)": f"{safe_fmt(tv_data['sma20'], '.1f')} / {safe_fmt(tv_data['sma50'], '.1f')} / {safe_fmt(tv_data['sma200'], '.1f')}", "V1 (T-2)": v1_f, "V2 (T-1)": v2_f, "V3 (Güncel)": v3_f, "Bağlantı": tv_url})
                     st.session_state.stored_dfs[symbol] = df_target
                 else: live_logs.append(f"[FAIL] {symbol:<6} : V1:{v1_f} -> V2:{v2_f} -> V3:{v3_f} (Koşul Sağlanmadı)")
                 console_placeholder.code("\n".join(live_logs[-15:]))
@@ -320,7 +342,7 @@ with tab1:
         st.write("---"); st.write(f"### ONAYLANMIŞ HİSSELER ({st.session_state.last_tf})")
         st.dataframe(pd.DataFrame(st.session_state.final_rows), use_container_width=True, hide_index=True, column_config={"Hisse": st.column_config.TextColumn("Hisse"), "Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
         st.write("---"); st.write("### GRAFİK İNCELEME İSTASYONU")
-        selected_stock_to_plot = st.selectbox("Detaylı inceleme için hisse seçin:", list(st.session_state.stored_dfs.keys()))
+        selected_stock_to_plot = st.selectbox("Detaylı inceleme için hisse seçin:", list(st.session_state.stored_dfs.keys()), key="t1_plot")
         if selected_stock_to_plot: st.pyplot(draw_trader_chart(selected_stock_to_plot, st.session_state.stored_dfs[selected_stock_to_plot]))
     elif st.session_state.last_tf:
         st.write("---"); st.markdown(f"<div style='color:#9ca3af; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] {st.session_state.last_tf} periyodunda belirtilen hacim ve indikatör koşullarını sağlayan hisse bulunamadı.</div>", unsafe_allow_html=True)
@@ -329,10 +351,17 @@ with tab1:
 with tab2:
     st.write("### HACİM ONAYLI MAKRO TREND KIRILIM STRATEJİSİ")
     
+    col_mkt2, col_btn2 = st.columns([3, 1])
+    with col_mkt2:
+        t2_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t2_mkt")
+    with col_btn2:
+        st.write("##")
+        run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
+    
     st.markdown("""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #10b981; margin-bottom:20px;'>
+    <div style='background-color:#111827; padding:15px; border-left:4px solid #10b981; margin-bottom:20px; margin-top:10px;'>
         <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Kurumsal Para (Smart Money) Avcısı Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Bu strateji günlük tuzakları görmezden gelir. Tüm BIST havuzunda son 5 YILLIK HAFTALIK grafikleri tarar.</div>
+        <div style='color:#9ca3af; font-size:13px;'>Bu strateji günlük tuzakları görmezden gelir. Seçilen piyasada son 5 YILLIK HAFTALIK grafikleri tarar. ABD borsası için hacimli ilk 600 hisse baz alınır.</div>
         <div style='color:#10b981; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
             [+] Koşul 1: 3-4 yıllık devasa düşen trend çizgisinin yukarı kırılması.<br>
             [+] Koşul 2: Kırılım mumunun yeşil (Kapanış > Açılış) ve güçlü olması.<br>
@@ -341,37 +370,35 @@ with tab2:
     </div>
     """, unsafe_allow_html=True)
     
-    run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="tab2_btn")
-    
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
     if run_macro_scan:
+        mkt_config = MARKET_CONFIGS[t2_selected_mkt]
         st.session_state.tab2_rows = []
         
-        with st.spinner("BIST Sembol verileri senkronize ediliyor..."):
-            bist_symbols = get_all_bist_symbols()
+        with st.spinner(f"{t2_selected_mkt} Sembol verileri senkronize ediliyor..."):
+            market_symbols = get_all_market_symbols(mkt_config)
             
-        if not bist_symbols:
-            st.markdown("<div style='color:#ef4444; font-family:Inter; font-weight:600;'>[SİSTEM HATASI] Bağlantı hatası: BIST listesi alınamadı.</div>", unsafe_allow_html=True)
+        if not market_symbols:
+            st.markdown("<div style='color:#ef4444; font-family:Inter; font-weight:600;'>[SİSTEM HATASI] Bağlantı hatası: Liste alınamadı.</div>", unsafe_allow_html=True)
         else:
-            yf_tickers = [f"{s}.IS" for s in bist_symbols]
+            # Suffix ataması ve nokta temizliği (BRK.B -> BRK-B)
+            yf_tickers = [f"{s.replace('.', '-')}{mkt_config['yf_suffix']}" for s in market_symbols]
             
-            with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(bist_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
-                # Sadece Haftalık ve 5 Yıllık Veri Çekilir
-                df_all = fetch_macro_bist_data_cached(tickers=yf_tickers)
+            with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(market_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
+                df_all = fetch_macro_data_cached(tickers=yf_tickers)
             
             with st.spinner("Fiyat hareketi ve hacim patlaması taranıyor..."):
                 pine_logs = []
                 pine_console = st.empty()
                 p_bar = st.progress(0)
                 
-                for idx, symbol in enumerate(bist_symbols):
-                    p_bar.progress((idx + 1) / len(bist_symbols))
-                    ticker = f"{symbol}.IS"
+                for idx, symbol in enumerate(market_symbols):
+                    p_bar.progress((idx + 1) / len(market_symbols))
+                    yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
                     
-                    if ticker in df_all.columns.levels[0]:
-                        # Hacim verisi eklendiği için Volume sütununu da düşürmüyoruz
-                        df_symbol = df_all[ticker].dropna(subset=['High', 'Close', 'Open', 'Volume'])
+                    if yf_ticker_key in df_all.columns.levels[0]:
+                        df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Close', 'Open', 'Volume'])
                         
                         is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
                         
@@ -379,7 +406,9 @@ with tab2:
                             pine_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
-                            tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval=W"
+                            tv_prefix = mkt_config["tv_prefix"]
+                            tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
+                            
                             st.session_state.tab2_rows.append({
                                 "Hisse": symbol,
                                 "Kapanış": round(context["price"], 2),
@@ -393,7 +422,7 @@ with tab2:
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write("### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER")
+        st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
