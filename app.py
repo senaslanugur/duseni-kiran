@@ -397,17 +397,6 @@ with tab2:
     with col_mkt2: t2_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t2_mkt")
     with col_btn2: st.write("##"); run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
     
-    st.markdown("""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #10b981; margin-bottom:20px; margin-top:10px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Kurumsal Para (Smart Money) Avcısı Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Bu strateji günlük tuzakları görmezden gelir. Seçilen piyasada son 5 YILLIK HAFTALIK grafikleri tarar.</div>
-        <div style='color:#10b981; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [+] Koşul 1: 3-4 yıllık devasa düşen trend çizgisinin yukarı kırılması.<br>
-            [+] Koşul 2: Kırılım mumunun yeşil (Kapanış > Açılış) ve güçlü olması.<br>
-            [+] Koşul 3: Hacmin son 1 ayın (4 hafta) ortalamasından en az %50 DAHA YÜKSEK olması.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
     
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
@@ -450,16 +439,6 @@ with tab3:
         st.write("##")
         run_fib_scan = st.button("FIBONACCI MATRİSİNİ ÇALIŞTIR", key="t3_btn")
         
-    st.markdown("""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #8b5cf6; margin-bottom:20px; margin-top:10px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>İstatistiksel Geri Çekilme ve Ralli Modeli Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Son 1 yıllık günlük veriler taranır. Piyasayı 2 farklı Matematiksel Faza göre sınıflandırır:</div>
-        <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [DURUM A]: "Altın Bölge (Pullback)" - Fiyat düzeltme yaparak 0.500 ile 0.618 arasına gelmiş ve alım tepkisi almıştır.<br>
-            [DURUM B]: "Ralli (Zirve Kırılımı)" - Fiyat düzeltmesini bitirip eski zirvesini (Fib 0) yukarı yönlü kırmıştır. Uzay hedefi 1.618'dir.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
     
     if "tab3_rows" not in st.session_state: st.session_state.tab3_rows = []
     
