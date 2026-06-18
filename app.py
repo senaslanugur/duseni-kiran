@@ -342,7 +342,7 @@ with tab2:
     right_bars = col_p2.number_input("Sağ Pivot Bar Sayısı (rightBars)", min_value=1, value=2)
     
     st.write("##")
-    run_pine_scan = st.button("PINE SCRIPT ALGORİTMASINI TETİKLE 🚀", key="tab2_btn")
+    run_pine_scan = st.button("PINE SCRIPT ALGORİTMASINI TETİKLE", key="tab2_btn")
     
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
