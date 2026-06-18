@@ -5,6 +5,7 @@ import matplotlib.dates as mdates
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import yfinance as yf
 import requests
 import time
@@ -73,28 +74,20 @@ TIMEFRAME_CONFIGS = {
 }
 
 # -----------------------------------------------------------------------------
-# TAB 2 - MAKRO TREND DİNAMİK PİVOT PARAMETRELERİ
+# TAB 2 - DİNAMİK MAKRO TREND + BOLLINGER PRO KONFİGÜRASYONU
 # -----------------------------------------------------------------------------
 TAB2_AUTO_CONFIGS = {
-    "Saatlik (1H) - Kısa Vade & Yüksek Volatilite": {
-        "yf_interval": "1h", "yf_period": "3mo", "tv_interval": "60",
-        "auto_left": 20, "auto_right": 3,
-        "desc": "Gün içi gürültüyü filtrelemek için son 3 aylık veride geniş bar taraması (20 Sol / 3 Sağ) uygulanır."
+    "Saatlik (1H) - Yüksek Volatilite": {
+        "yf_interval": "1h", "yf_period": "6mo", "tv_interval": "60",
+        "lookback": 450, "desc": "Gün içi gürültüyü filtrelemek için 450 barlık derin tarama uygulanır."
     },
-    "Günlük (1D) - Orta Vade & Standart Salınım": {
-        "yf_interval": "1d", "yf_period": "1y", "tv_interval": "D",
-        "auto_left": 10, "auto_right": 2,
-        "desc": "Klasik Swing Trade kalibrasyonu. Yaklaşık 2 haftalık (10 Sol / 2 Sağ) net dirençler son 1 yıl içinde aranır."
+    "Günlük (1D) - Orta Vade (Standart)": {
+        "yf_interval": "1d", "yf_period": "2y", "tv_interval": "D",
+        "lookback": 300, "desc": "Son 300 işlem günündeki (yaklaşık 1.5 yıl) mutlak tepe baz alınarak dışbükey direnç taranır."
     },
-    "Haftalık (1W) - Uzun Vade & Ana Dirençler": {
+    "Haftalık (1W) - Süper Makro Trend": {
         "yf_interval": "1wk", "yf_period": "5y", "tv_interval": "W",
-        "auto_left": 8, "auto_right": 2,
-        "desc": "Ana dirençleri tespit etmek için son 5 YILLIK geçmiş veride (8 Sol / 2 Sağ) makro kırılımlar aranır."
-    },
-    "Aylık (1M) - Süper Makro & Tarihi Zirveler": {
-        "yf_interval": "1mo", "yf_period": "5y", "tv_interval": "M",
-        "auto_left": 6, "auto_right": 1,
-        "desc": "Hissenin ana trendini görmek için son 5 YILLIK aylık mumlar (6 Sol / 1 Sağ) incelenerek en büyük yapılar tespit edilir."
+        "lookback": 150, "desc": "Haftalık periyotta son 150 haftalık tarihi zirve dirençleri test edilir."
     }
 }
 
@@ -103,7 +96,7 @@ def safe_fmt(val, fmt=".2f"):
     return f"{val:{fmt}}"
 
 # =============================================================================
-# ORTAK VERİ VE TAB 1 FONKSİYONLARI 
+# ORTAK VERİ VE TAB 1 FONKSİYONLARI (DOKUNULMADI)
 # =============================================================================
 def scan_tradingview_by_timeframe(tf_config):
     url = "https://scanner.tradingview.com/turkey/scan"
@@ -203,33 +196,88 @@ def get_all_bist_symbols():
     except: pass
     return []
 
+# =============================================================================
+# TAB 2 - PINE SCRIPT (CONVEX HULL) + BOLLINGER MOTORU
+# =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_bist_data_dynamic_cached(tickers, period, interval):
     return yf.download(tickers=tickers, period=period, interval=interval, group_by="ticker", threads=True, progress=False)
 
-def evaluate_pine_script_logic(df, left_bars, right_bars):
-    if df is None or len(df) < left_bars + right_bars + 2: return False, None
-    highs, closes, opens = df['High'].values, df['Close'].values, df['Open'].values
-    pivots = [(i, highs[i]) for i in range(left_bars, len(highs) - right_bars) if highs[i] == max(highs[i - left_bars : i + right_bars + 1])]
-    if len(pivots) < 2: return False, None
-    p1_idx, p1_price = pivots[-1] 
-    p2_idx, p2_price = pivots[-2] 
-    if p2_price <= p1_price: return False, None 
-    slope = (p1_price - p2_price) / (p1_idx - p2_idx)
+def evaluate_macro_bollinger_breakout(df, lookback_input=300, confirm_len=20, bb_length=20, bb_mult=2.0):
+    """
+    Pine Script mantığının mutlak tepe tespiti, dışbükey negatif eğim taraması 
+    ve Bollinger Bantları onayını içeren güncel versiyonudur.
+    """
+    if df is None or len(df) < max(lookback_input, confirm_len, bb_length) + 5: 
+        return False, None
+    
+    # Hesaplamaları son kısıma odaklayarak bellek tasarrufu yapıyoruz
+    df_calc = df.tail(lookback_input + 50).copy()
+    highs = df_calc['High'].values
+    closes = df_calc['Close'].values
+    
+    # Bollinger Bantları (Pandas ile)
+    sma = df_calc['Close'].rolling(window=bb_length).mean()
+    std = df_calc['Close'].rolling(window=bb_length).std(ddof=0)
+    bb_upper = (sma + (bb_mult * std)).values
+    
     curr_idx = len(highs) - 1
     prev_idx = curr_idx - 1
-    prev_trendline = p1_price + slope * (prev_idx - p1_idx)
-    curr_trendline = p1_price + slope * (curr_idx - p1_idx)
     
-    if (closes[prev_idx] < prev_trendline) and (closes[curr_idx] > curr_trendline) and (closes[curr_idx] > opens[curr_idx]):
-        return True, {"price": closes[curr_idx], "trend_val": curr_trendline, "p1_price": p1_price, "p2_price": p2_price}
+    # 1. Lookback penceresi içindeki Mutlak Zirveyi Bul (u_start_b)
+    start_lookback = max(0, curr_idx - lookback_input)
+    u_start_b = start_lookback + np.argmax(highs[start_lookback:curr_idx+1])
+    u_start_p = highs[u_start_b]
+    
+    # 2. İkinci Tepeyi Bul (En Yatay Negatif Eğim)
+    max_u_slope = -np.inf
+    u_sec_b = -1
+    u_sec_p = -1
+    
+    # Mutlak zirveden güncel bara kadar tarama yap: $\frac{High[i] - u\_start\_p}{i - u\_start\_b}$
+    for i in range(u_start_b + 1, curr_idx + 1):
+        slope = (highs[i] - u_start_p) / (i - u_start_b)
+        if slope < 0 and slope > max_u_slope:
+            max_u_slope = slope
+            u_sec_b = i
+            u_sec_p = highs[i]
+            
+    if u_sec_b == -1: # Düşen bir trend (geçerli negatif eğim) oluşmamışsa iptal et
+        return False, None
+        
+    # 3. Kırılım Hesaplaması (Dinamik Trend Çizgisi Değerleri)
+    prev_trendline = u_start_p + max_u_slope * (prev_idx - u_start_b)
+    curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
+    
+    # 4. Kırılım Koşulları (Pine Script ile Birebir Eşleşme)
+    # KOŞUL 1: Trend Kırılımı (crossover)
+    line_crossed = (closes[prev_idx] <= prev_trendline) and (closes[curr_idx] > curr_trendline)
+    
+    # KOŞUL 2: Netlik Filtresi (Önceki 20 barın en yüksek kapanışını aşmalı)
+    # NOT: Python diziliminde güncel bar dışarıda bırakılır ki mantık hatası oluşmasın.
+    highest_close_prev = np.max(closes[curr_idx - confirm_len : curr_idx])
+    is_strong = closes[curr_idx] > highest_close_prev
+    
+    # KOŞUL 3: Bollinger Üst Bant Onayı
+    bb_confirmed = closes[curr_idx] > bb_upper[curr_idx]
+    
+    pro_breakout = line_crossed and is_strong and bb_confirmed and (curr_idx > u_sec_b)
+    
+    if pro_breakout:
+        return True, {
+            "price": closes[curr_idx],
+            "trend_val": curr_trendline,
+            "bb_upper": bb_upper[curr_idx],
+            "u_start_p": u_start_p,
+            "u_sec_p": u_sec_p
+        }
     return False, None
 
 # =============================================================================
 # UI RENDER MİMARİSİ
 # =============================================================================
 st.title("TRADER WORKSTATION")
-tab1, tab2 = st.tabs(["HİBRİT TARAMA", "DÜŞENİ KIRAN (TAM OTOMATİK)"])
+tab1, tab2 = st.tabs(["HİBRİT TARAMA", "DİNAMİK BOLLINGER BREAKOUT (PRO)"])
 
 with tab1:
     col_tf, col_btn = st.columns([3, 1])
@@ -294,22 +342,22 @@ with tab1:
         st.write("---"); st.markdown(f"<div style='color:#9ca3af; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] {st.session_state.last_tf} periyodunda belirtilen hacim ve indikatör koşullarını sağlayan hisse bulunamadı.</div>", unsafe_allow_html=True)
 
 with tab2:
-    st.write("### OTOMATİK DÜŞENİ KIRAN TARAMA MİMARİSİ")
+    st.write("### DİNAMİK MAKRO TREND VE BOLLINGER MİMARİSİ")
     
     col_t2, col_btn2 = st.columns([3, 1])
     with col_t2:
-        selected_tab2_tf = st.selectbox("Sistem Periyodunu Seçin:", list(TAB2_AUTO_CONFIGS.keys()), index=2) # Varsayılan olarak Haftalık seçili gelir
+        selected_tab2_tf = st.selectbox("Sistem Periyodunu Seçin:", list(TAB2_AUTO_CONFIGS.keys()), index=1)
     with col_btn2:
         st.write("##")
-        run_pine_scan = st.button("STRATEJİYİ ÇALIŞTIR", key="tab2_btn")
+        run_pine_scan = st.button("PRO STRATEJİYİ ÇALIŞTIR", key="tab2_btn")
     
     active_config = TAB2_AUTO_CONFIGS[selected_tab2_tf]
     st.markdown(f"""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #d97706; margin-bottom:20px;'>
+    <div style='background-color:#111827; padding:15px; border-left:4px solid #0084ff; margin-bottom:20px;'>
         <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Sistem Otomasyonu Devrede:</div>
         <div style='color:#9ca3af; font-size:13px;'>{active_config["desc"]}</div>
-        <div style='color:#10b981; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [+] Sol Pivot(leftBars) = {active_config["auto_left"]} | Sağ Pivot(rightBars) = {active_config["auto_right"]} | Veri Derinliği: {active_config["yf_period"]}
+        <div style='color:#0084ff; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
+            [+] Lookback (Tarama Derinliği) = {active_config["lookback"]} Bar | Netlik Onayı = Son 20 Bar | BB Çarpan = 2.0
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -334,13 +382,12 @@ with tab2:
                     interval=active_config["yf_interval"]
                 )
             
-            with st.spinner("Trend kırılım otomasyonu yürütülüyor..."):
+            with st.spinner("Bollinger destekli kırılım otomasyonu yürütülüyor..."):
                 pine_logs = []
                 pine_console = st.empty()
                 p_bar = st.progress(0)
                 
-                left_bars = active_config["auto_left"]
-                right_bars = active_config["auto_right"]
+                lookback = active_config["lookback"]
                 tv_interval = active_config["tv_interval"]
                 
                 for idx, symbol in enumerate(bist_symbols):
@@ -350,23 +397,23 @@ with tab2:
                     if ticker in df_all.columns.levels[0]:
                         df_symbol = df_all[ticker].dropna(subset=['High', 'Close', 'Open'])
                         
-                        is_breakout, context = evaluate_pine_script_logic(df_symbol, left_bars, right_bars)
+                        is_breakout, context = evaluate_macro_bollinger_breakout(df_symbol, lookback_input=lookback)
                         
                         if is_breakout:
-                            pine_logs.append(f"[BREAKOUT] {symbol:<6} : Otomatik trend hattı kırıldı.")
+                            pine_logs.append(f"[⚡ PRO BREAKOUT] {symbol:<6} : Makro trend ve BB onayı alındı.")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
                             tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval={tv_interval}"
                             st.session_state.tab2_rows.append({
                                 "Hisse": symbol,
                                 "Kapanış": round(context["price"], 2),
+                                "BB Üst Bant": round(context["bb_upper"], 2),
                                 "Kırılan Direnç": round(context["trend_val"], 2),
-                                "Pivot-1": round(context["p1_price"], 2),
-                                "Pivot-2": round(context["p2_price"], 2),
+                                "Mutlak Zirve (P1)": round(context["u_start_p"], 2),
                                 "Bağlantı": tv_url
                             })
                             
-            st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='color:#0084ff; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
             
     if st.session_state.tab2_rows:
         st.write("---")
