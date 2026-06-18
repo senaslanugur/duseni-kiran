@@ -305,9 +305,9 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     is_breakout = curr_close > swing_high
     
     if is_golden_pocket:
-        phase = "🟡 Altın Bölge (Pullback)"
+        phase = "🟡 Pullback"
     elif is_breakout:
-        phase = "🚀 Ralli (Zirve Kırılımı)"
+        phase = "Zirve Kırılımı"
     else:
         return False, None
         
