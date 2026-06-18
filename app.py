@@ -1,14 +1,15 @@
+import matplotlib
+# [ÖNEMLİ DEPLOYMENT AYARI]: Sunucu ortamında (headless) grafik çizimi çökmesini engeller
+matplotlib.use('Agg') 
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
 import streamlit as st
 import pandas as pd
 import yfinance as yf
 import requests
 import time
 import random
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import matplotlib
-matplotlib.use('Agg') # Sunucu ortamında grafik çizimi için zorunlu ayar
-import matplotlib.pyplot as plt
 
 # -----------------------------------------------------------------------------
 # 1. Sayfa Konfigürasyonu (Geniş Ekran ve Koyu Bloomberg Teması)
@@ -51,7 +52,7 @@ def safe_fmt(val, fmt=".2f"):
     return f"{val:{fmt}}"
 
 # -----------------------------------------------------------------------------
-# 3. TAB 1: Hibrit Tarama Fonksiyonları (Mevcut Mantık)
+# 3. TAB 1: Hibrit Tarama Fonksiyonları
 # -----------------------------------------------------------------------------
 def scan_tradingview_by_timeframe(tf_config):
     url = "https://scanner.tradingview.com/turkey/scan"
@@ -197,11 +198,13 @@ def get_all_bist_symbols():
         pass
     return []
 
+# [ÖNEMLİ DEPLOYMENT AYARI]: Sunucu RAM ve CPU limitlerini korumak için Yahoo verisini 1 saat önbellekte tutar
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_all_bist_data_cached(tickers):
+    return yf.download(tickers=tickers, period="6mo", interval="1d", group_by="ticker", threads=True, progress=False)
+
 def evaluate_pine_script_logic(df, left_bars, right_bars):
-    """
-    Pine Script mantığının Python (Pandas/Numpy) karşılığı.
-    Düşen trend kırılımını test eder.
-    """
+    """Pine Script mantığının Python (Pandas/Numpy) karşılığı."""
     if df is None or len(df) < left_bars + right_bars + 2:
         return False, None
     
@@ -209,32 +212,26 @@ def evaluate_pine_script_logic(df, left_bars, right_bars):
     closes = df['Close'].values
     opens = df['Open'].values
     
-    # --- Pivot Zirvelerin Tespiti ---
     pivots = []
     for i in range(left_bars, len(highs) - right_bars):
         window = highs[i - left_bars : i + right_bars + 1]
-        # Eğer incelediğimiz bar, sol ve sağ penceresinin en yükseğiyse pivot'tur
         if highs[i] == max(window):
             pivots.append((i, highs[i]))
             
     if len(pivots) < 2:
         return False, None
         
-    # Son iki pivot noktası
-    p1_idx, p1_price = pivots[-1] # En güncel pivot (pivotPrice1)
-    p2_idx, p2_price = pivots[-2] # Bir önceki pivot (pivotPrice2)
+    p1_idx, p1_price = pivots[-1] 
+    p2_idx, p2_price = pivots[-2] 
     
-    # --- Düşen Trend Şartı ---
     if p2_price <= p1_price:
-        return False, None # Yükselen veya yatay trend, düşen trend değil.
+        return False, None 
         
-    # --- Düşen Trend Çizgisi Hesaplama ---
     slope = (p1_price - p2_price) / (p1_idx - p2_idx)
     
     curr_idx = len(highs) - 1
     prev_idx = curr_idx - 1
     
-    # Trend çizgisinin güncel ve bir önceki bardaki y-ekseni değerleri
     prev_trendline = p1_price + slope * (prev_idx - p1_idx)
     curr_trendline = p1_price + slope * (curr_idx - p1_idx)
     
@@ -242,8 +239,6 @@ def evaluate_pine_script_logic(df, left_bars, right_bars):
     curr_close = closes[curr_idx]
     curr_open = opens[curr_idx]
     
-    # --- Kırılım Koşulu (Breakout) ---
-    # Önceki bar trendin altındayken, mevcut kapanışın trendin üzerinde olması
     is_breakout = (prev_close < prev_trendline) and (curr_close > curr_trendline) and (curr_close > curr_open)
     
     context = {
@@ -263,7 +258,7 @@ st.title("📊 TRADER WORKSTATION: SİSTEM MİMARİSİ")
 tab1, tab2 = st.tabs(["📈 1. Hibrit Tarama (Hacim + İndikatör)", "📉 2. Düşeni Kıran (Pine Script Pivot)"])
 
 # ==========================================
-# TAB 1: MEVCUT SİSTEM
+# TAB 1: HİBRİT TARAMA SİSTEMİ
 # ==========================================
 with tab1:
     st.write("### Hibrit İndikatör ve Hacim Taraması")
@@ -340,7 +335,7 @@ with tab1:
 # ==========================================
 with tab2:
     st.write("### 📉 Düşeni Kıran (Trend Kırılımı) Tarama Modülü")
-    st.info("Pine Script algoritmasındaki 'Pivot Zirveler' hesaplaması TradingView API'sinde yerleşik bir filtre olmadığı için, bu modül tüm BIST hisselerinin verisini yfinance üzerinden toplu(batch) çekerek Pine Script mantığını lokalde çalıştırır.")
+    st.info("Pine Script algoritmasındaki 'Pivot Zirveler' hesaplaması lokal olarak yürütülmektedir. Çoklu veri çekimi sunucu tarafında önbelleklenir (Cache TTL: 1 Saat).")
     
     col_p1, col_p2, col_p3 = st.columns(3)
     left_bars = col_p1.number_input("Sol Pivot Bar Sayısı (leftBars)", minval=1, value=10)
@@ -362,9 +357,8 @@ with tab2:
         else:
             yf_tickers = [f"{s}.IS" for s in bist_symbols]
             
-            with st.spinner(f"2. {len(bist_symbols)} Hisse için geçmiş veriler toplu olarak indiriliyor (Lütfen Bekleyin)..."):
-                # Optimizasyon: Veriyi tek tek değil, toplu(multi-thread) olarak çekeriz.
-                df_all = yf.download(tickers=yf_tickers, period="6mo", interval="1d", group_by="ticker", threads=True, progress=False)
+            with st.spinner(f"2. {len(bist_symbols)} Hisse için veriler önbellekten veya Yahoo'dan alınıyor..."):
+                df_all = fetch_all_bist_data_cached(yf_tickers)
             
             with st.spinner("3. Algoritma uygulanıyor..."):
                 pine_logs = []
@@ -375,14 +369,13 @@ with tab2:
                     p_bar.progress((idx + 1) / len(bist_symbols))
                     ticker = f"{symbol}.IS"
                     
-                    # Toplu çekilen veriden ilgili hisseyi ayıklama
                     if ticker in df_all.columns.levels[0]:
                         df_symbol = df_all[ticker].dropna(subset=['High', 'Close', 'Open'])
                         
                         is_breakout, context = evaluate_pine_script_logic(df_symbol, left_bars, right_bars)
                         
                         if is_breakout:
-                            pine_logs.append(f"[🔥 BREAKOUT] {symbol:<6} - Düşen trendi hacimli kırdı!")
+                            pine_logs.append(f"[🔥 BREAKOUT] {symbol:<6} - Düşen trendi kırdı!")
                             pine_console.code("\n".join(pine_logs[-15:]))
                             
                             tv_url = f"https://www.tradingview.com/chart/?symbol=BIST:{symbol}&interval=D"
