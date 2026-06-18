@@ -1,11 +1,3 @@
-Kesinlikle yapabiliriz ve aslına bakarsanız profesyonel sistem tasarımının (otomasyonun) zirvesi tam olarak budur. Piyasada her periyodun "gürültü" (noise) seviyesi farklıdır.
-Sistem mimarisine bu dinamik yapıyı kazandırdığımızda, kullanıcı sadece hedeflediği vadeyi (Kısa, Orta, Uzun) seçer. Arka planda algoritma, seçilen periyodun gürültü karakteristiğine göre kendi leftBars ve rightBars filtrelerini **otomatik olarak** kalibre eder.
-Bunu şu stratejik otomasyon mantığıyla kurguladım:
- 1. **Kısa Vade (1 Saatlik - 1H):** Gün içi hareketlerde çok fazla yanıltıcı zikzak (gürültü) olur. Bu yüzden algoritma burada pivotları bulmak için filtreyi genişletir (**20 Sol / 3 Sağ**). Sadece gerçekten sağlam olan gün içi dirençleri kırıldığında sinyal üretir.
- 2. **Orta Vade (1 Günlük - 1D):** Piyasanın standart ritmidir. Önceki varsayılan ayarımız olan **10 Sol / 2 Sağ** (yaklaşık 2 haftalık salınım) burada kusursuz çalışır.
- 3. **Uzun Vade (1 Haftalık - 1W):** Haftalık barlar zaten kendi başına çok güçlü ve gürültüsüzdür. Çok geniş bir alana bakmaya gerek yoktur. Algoritma burada filtreyi daraltır (**5 Sol / 1 Sağ**) ki makro kırılımları aylar sonrasında değil, gerçekleştiği an yakalayabilsin.
-Tab-1'deki orijinal kodlara **hiç dokunmadan**, sadece veri indirme fonksiyonunu dinamik hale getirip Tab-2'yi tam otomatik bir strateji robotuna dönüştüren güncel kod aşağıdadır:
-```python
 import matplotlib
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
@@ -382,5 +374,3 @@ with tab2:
                      column_config={
                          "Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")
                      })
-
-```
