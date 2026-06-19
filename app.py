@@ -498,7 +498,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "MAKRO TREND KIRILIMI",
     "FIBONACCI İSTATİSTİK MATRİSİ",
     "KESİŞİM",
-    "KANTİTATİF LABORATUVAR (YENİ)"
+    "FİLTRELER"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -722,7 +722,7 @@ with tab5:
         
         active_template = TAB5_TEMPLATES[selected_template_key]
         
-        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (ŞABLON DETAYI)", expanded=True):
+        with st.expander("ŞABLON DETAYI", expanded=True):
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Ana Amacı:</b><br><span style='color:#9ca3af;'>{active_template['amacı']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Trader Hedefi:</b><br><span style='color:#9ca3af;'>{active_template['hedefi']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Görülmesi Gereken (Teyit):</b><br><span style='color:#10b981;'>{active_template['beklenti']}</span></div>", unsafe_allow_html=True)
@@ -758,7 +758,7 @@ with tab5:
             
         active_conf = TAB5_CONFLUENCES[selected_conf_key]
         
-        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (KESİŞİM DETAYI)", expanded=True):
+        with st.expander("KESİŞİM DETAYI", expanded=True):
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Birleştirilen Şablonlar:</b><br><span style='color:#d97706; font-weight:600;'>{active_conf['sablonlar']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Kesişim Mantığı:</b><br><span style='color:#9ca3af;'>{active_conf['mantik']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Neden Buradan Alınır?</b><br><span style='color:#10b981;'>{active_conf['neden']}</span></div>", unsafe_allow_html=True)
