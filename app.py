@@ -234,7 +234,7 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     return False, None
 
 # =============================================================================
-# 5. TAB 3 - OTONOM FIBONACCI MATRİSİ (AŞAMALI MODEL)
+# 5. TAB 3 - OTONOM FIBONACCI MATRİSİ 
 # =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_fib_data_cached(tickers):
@@ -286,8 +286,8 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
     is_breakout = curr_close > swing_high
     
-    if is_golden_pocket: phase = "🟡 Pullback"
-    elif is_breakout: phase = "Zirve Kırılımı"
+    if is_golden_pocket: phase = "[PULLBACK] Altın Bölge"
+    elif is_breakout: phase = "[BREAKOUT] Zirve Kırılımı"
     else: return False, None
         
     return True, {
@@ -296,29 +296,18 @@ def evaluate_auto_fibonacci(df, lookback_bars=252):
     }
 
 # =============================================================================
-# 6. TAB 4 - KUSURSUZ FIRTINA (PERFECT STORM) KOMBİNASYONU
+# 6. TAB 4 - KUSURSUZ FIRTINA KOMBİNASYONU
 # =============================================================================
 def evaluate_perfect_storm(df_weekly, df_daily, macro_lookback=200, fib_lookback=252):
-    """
-    Sistem Mühendisliği Zirvesi:
-    Hisse günlük periyotta Kusursuz bir Altın Bölge Pullback'indeyken (Tab-3),
-    Aynı hissenin haftalıkta da devasa bir düşen trendi kırmış ve hala üzerinde 
-    tutunuyor olduğunu (Tab-2 geçmisi) teyit eder.
-    """
-    # 1. Aşama: Günlükte Fibonacci Altın Bölgede (Pullback) mi?
     is_fib, fib_context = evaluate_auto_fibonacci(df_daily, lookback_bars=fib_lookback)
-    if not is_fib or "Pullback" not in fib_context["phase"]:
-        return False, None
+    if not is_fib or "Pullback" not in fib_context["phase"]: return False, None
         
-    # 2. Aşama: Haftalıkta Makro Düşen Trend kırılmış ve üzerinde mi?
-    if df_weekly is None or len(df_weekly) < macro_lookback + 5:
-        return False, None
+    if df_weekly is None or len(df_weekly) < macro_lookback + 5: return False, None
         
     highs = df_weekly['High'].values
     closes = df_weekly['Close'].values
     curr_idx = len(highs) - 1
     
-    # Makro tepeyi bul
     start_search = max(0, curr_idx - macro_lookback)
     u_start_b = start_search + np.argmax(highs[start_search:curr_idx])
     u_start_p = highs[u_start_b]
@@ -326,7 +315,6 @@ def evaluate_perfect_storm(df_weekly, df_daily, macro_lookback=200, fib_lookback
     max_u_slope = -np.inf
     u_sec_b = -1
     
-    # Trendi bul (Trendin en az 1 ay = 4 hafta önce oluşmuş olmasını istiyoruz)
     search_end = max(u_start_b + 1, curr_idx - 4)
     for i in range(u_start_b + 1, search_end):
         slope = (highs[i] - u_start_p) / (i - u_start_b)
@@ -336,32 +324,181 @@ def evaluate_perfect_storm(df_weekly, df_daily, macro_lookback=200, fib_lookback
             
     if u_sec_b == -1: return False, None
         
-    # Güncel bar için trend çizgisi direnci
     curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
-    
-    # KESİN ONAY: Fiyat makro düşen trendin de net bir şekilde (en az %2) üzerinde mi?
     is_above_macro_trend = closes[curr_idx] > (curr_trendline * 1.02)
     
     if is_above_macro_trend:
         return True, {
-            "price": fib_context["price"],
-            "fib_0618": fib_context["fib_0618"],
-            "fib_0500": fib_context["fib_0500"],
-            "macro_trend_val": curr_trendline,
-            "macro_peak": u_start_p,
-            "fib_target": fib_context["fib_target"]
+            "price": fib_context["price"], "fib_0618": fib_context["fib_0618"], "fib_0500": fib_context["fib_0500"],
+            "macro_trend_val": curr_trendline, "macro_peak": u_start_p, "fib_target": fib_context["fib_target"]
         }
     return False, None
+
+# =============================================================================
+# 7. TAB 5 - KANTİTATİF LABORATUVAR VERİ YAPISI
+# =============================================================================
+TAB5_TEMPLATES = {
+    "[ŞABLON 1] Mikro Trend Dönüşü (Erken Sinyal)": {
+        "amacı": "Çok kısa vadeli momentumun (EMA 5), orta vadeli trendi (EMA 50) yukarı kestiği o ilk sismik anı bulmaktır.",
+        "hedefi": "Fiyat dipte konsolide olduktan sonra başlayan ilk agresif hareketi yakalamak.",
+        "beklenti": "Fiyatın dipten yeni kalkıyor olması ve MACD'nin tam sıfır noktasında kesişim yapıyor olması gözlenmelidir.",
+        "tv_filters": [{"left": "EMA5", "operation": "greater", "right": "EMA50"}, {"left": "MACD.macd", "operation": "greater", "right": "MACD.signal"}]
+    },
+    "[ŞABLON 2] Kusursuz Sıralanım (Minervini)": {
+        "amacı": "Bir hissenin tartışmasız ve en güçlü Boğa Piyasasında olduğunu matematiksel olarak ispatlamaktır.",
+        "hedefi": "Ortalamaların büyükten küçüğe sıralandığı (SMA 50 > 100 > 200) lider hisselere fon girişi yapmak.",
+        "beklenti": "ADX'in 20'den büyük olmasıyla trend gücünün kanıtlanması ve kurumsal hacim artışı.",
+        "tv_filters": [{"left": "SMA50", "operation": "greater", "right": "SMA100"}, {"left": "SMA100", "operation": "greater", "right": "SMA200"}, {"left": "close", "operation": "greater", "right": "SMA50"}, {"left": "ADX", "operation": "greater", "right": 20}]
+    },
+    "[ŞABLON 3] VCP (Volatilite Daralması) Pususu": {
+        "amacı": "Fiyatın sert bir yükselişten sonra dinlenmeye geçtiği, hacmin kuruduğu alanı bulmaktır.",
+        "hedefi": "Yön bulmakta zorlanan, sıkışmış ve patlamaya hazır (Accumulation) evresindeki hisseyi yakalamak.",
+        "beklenti": "Volatilitenin %15 altına düşmesi ve işlem hacminin kuruyarak satıcıların bittiğini teyit etmesi.",
+        "tv_filters": [{"left": "close", "operation": "greater", "right": "EMA20"}, {"left": "ADX", "operation": "less", "right": 20}, {"left": "Volatility.D", "operation": "less", "right": 15}]
+    },
+    "[ŞABLON 4] Yatay Kırılım (Sıkışma Patlaması)": {
+        "amacı": "Son 1 haftadır daracık bir bantta sıkışmış hissenin hacimle o kutudan yukarı fırlamasını avlamaktır.",
+        "hedefi": "Gün içi veya kısa vadeli (Swing) sert patlamaları tam kırılım anında yakalamak.",
+        "beklenti": "Relatif Hacmin (Rel Vol) en az 1.2 katına çıkması ve RSI'ın 50 üzerine atması.",
+        "tv_filters": [{"left": "relative_volume_10d_calc", "operation": "greater", "right": 1.2}, {"left": "ADX", "operation": "less", "right": 20}, {"left": "RSI", "operation": "greater", "right": 50}]
+    },
+    "[ŞABLON 5] Aşırı Sıkışma (Yay Gerilmesi)": {
+        "amacı": "Volatilitenin çift kademeli (%15 ve %5 altı) düşerek fiyatın düz bir çizgi haline geldiği ölüm sessizliğini taramak.",
+        "hedefi": "Yayı sonuna kadar gerilmiş hisseye, hacim girdiği saniye girip asimetrik kâr almak.",
+        "beklenti": "Müthiş dar bir stop-loss mesafesi ve anlık hacim (Rel Vol > 1.2) patlaması.",
+        "tv_filters": [{"left": "Volatility.D", "operation": "less", "right": 5}, {"left": "ADX", "operation": "less", "right": 20}, {"left": "relative_volume_10d_calc", "operation": "greater", "right": 1.2}]
+    },
+    "[ŞABLON 6] Makro Ralli ve Yüksek Beta": {
+        "amacı": "Endeksten agresif hareket eden (Beta > 0.8), yılbaşından beri makro ralliye girmiş hisseleri listelemektir.",
+        "hedefi": "Fon yöneticilerinin ağırlık verdiği, ivmeli lider hisseleri portföye eklemek.",
+        "beklenti": "Fiyatın SMA 200 üzerinde süzülmesi ve ADX'in 25 üzerinde ralli modunda kalması.",
+        "tv_filters": [{"left": "close", "operation": "greater", "right": "SMA200"}, {"left": "SMA50", "operation": "greater", "right": "SMA200"}, {"left": "ADX", "operation": "greater", "right": 25}]
+    },
+    "[ŞABLON 7] Bayrak Flama (Pullback) Düzeltmesi": {
+        "amacı": "Son 1 ayda çok yükselmiş ancak son 1 haftada yorulup dinlenmeye (Bayrak) geçmiş hisseleri bulmaktır.",
+        "hedefi": "Trendi kaçıran yatırımcılara trende 'ilk güvenli geri çekilme' noktasından binme şansı sunmak.",
+        "beklenti": "RSI'ın 50-70 bandına soğuması ve ADX'in hala 20 üzerinde gücünü koruması.",
+        "tv_filters": [{"left": "SMA50", "operation": "greater", "right": "SMA200"}, {"left": "ADX", "operation": "greater", "right": 20}, {"left": "Perf.1M", "operation": "greater", "right": 15}]
+    },
+    "[ŞABLON 8] Ayı Piyasası (Açığa Satış Çöküşü)": {
+        "amacı": "Aylardır yükselen ancak son 1 ayda zirveden yıkılmaya başlayan hisseleri tespit etmektir.",
+        "hedefi": "Açığa satış (Short) yapmak veya eldeki portföyü boşaltmak için alarm mekanizması.",
+        "beklenti": "Fiyatın EMA 20 ve SMA 50'nin altına sarkması ve bu esnada hacmin (satış baskısının) artması.",
+        "tv_filters": [{"left": "close", "operation": "less", "right": "EMA20"}, {"left": "MACD.macd", "operation": "less", "right": "MACD.signal"}, {"left": "Perf.3M", "operation": "greater", "right": 0}, {"left": "Perf.1M", "operation": "less", "right": 0}]
+    },
+    "[ŞABLON 9] Agresif Momentum (Çoklu Teyit)": {
+        "amacı": "Piyasada anlık olarak en sıcak olan, tüm momentum indikatörlerinin (CCI, Aroon) al sinyali verdiği tahtaları bulmak.",
+        "hedefi": "Haftalık %15'ten fazla uçmamış ama gün içi agresif para giren hisselerde scalp/swing yapmak.",
+        "beklenti": "CCI > 90 ve güçlü Aroon ile alıcıların hissede tam kontrol sağladığının teyidi.",
+        "tv_filters": [{"left": "EMA5", "operation": "greater", "right": "EMA20"}, {"left": "CCI20", "operation": "greater", "right": 90}, {"left": "Aroon.Up", "operation": "greater", "right": "Aroon.Down"}]
+    },
+    "[ŞABLON 10] Erken Trend Teyidi ve SAR Onayı": {
+        "amacı": "Parabolik SAR indikatörünün fiyatın altına geçerek teknik düşüşü bitirdiği ilk evreyi tarar.",
+        "hedefi": "Trend dönüşünü erkenden ve risksiz şekilde teyit etmek.",
+        "beklenti": "SAR dönüşü ile birlikte CCI > 90 onayı ve göreceli hacmin 1'in üzerinde kalması.",
+        "tv_filters": [{"left": "EMA5", "operation": "greater", "right": "EMA50"}, {"left": "CCI20", "operation": "greater", "right": 90}, {"left": "MACD.macd", "operation": "greater", "right": "MACD.signal"}]
+    },
+    "[ŞABLON 11] Standart Salınım (Swing) Temeli": {
+        "amacı": "Aşırı uçlarda olmayan, sağlıklı bir şekilde yönünü yukarı çevirmiş şirketleri listelemektir.",
+        "hedefi": "CCI > -100 ile aşırı satımdan (oversold) yeni kurtulmuş hisselerde güvenli dalga sörfü.",
+        "beklenti": "Relatif hacim artışı ve EMA'ların pozitif sıralanması.",
+        "tv_filters": [{"left": "EMA5", "operation": "greater", "right": "EMA50"}, {"left": "CCI20", "operation": "greater", "right": -100}, {"left": "RSI", "operation": "greater", "right": 50}]
+    },
+    "[ŞABLON 12] Kurumsal Trend (Stage 2) Onayı": {
+        "amacı": "Kurumsal fonların ağırlık verdiği, tartışmasız 2. Evre (Stage 2) ralli hisselerini avlamaktır.",
+        "hedefi": "Golden Cross (50>200) sonrası oluşan sarsılmaz trendlere katılmak.",
+        "beklenti": "Kısa vadeli hacmin uzun vadeli hacmi geçmesi ve ADX'in trendi kanıtlaması.",
+        "tv_filters": [{"left": "SMA50", "operation": "greater", "right": "SMA200"}, {"left": "close", "operation": "greater", "right": "SMA50"}, {"left": "ADX", "operation": "greater", "right": 25}]
+    },
+    "[ŞABLON 13] Hızlı Salınım ve Bulut (Ichimoku)": {
+        "amacı": "Ichimoku bulut sistemindeki ilk ve en hızlı al sinyalini (Tenkan'ın Kijun'u kesmesi) yakalamaktır.",
+        "hedefi": "1-2 günlük çok hızlı vur-kaç (fast swing) işlemleri için likit hisseler bulmak.",
+        "beklenti": "Hacmin 1 Milyonun üzerinde olması ve 7 günlük hızlı RSI'ın aşırı alıma girmeden ivmelenmesi.",
+        "tv_filters": [{"left": "Ichimoku.CLine", "operation": "greater", "right": "Ichimoku.BLine"}, {"left": "MACD.macd", "operation": "greater", "right": "MACD.signal"}]
+    },
+    "[ŞABLON 14] Bollinger Sıkışma Patlaması": {
+        "amacı": "Piyasada uyuyan bir devin uyanış anını saniyesinde yakalamaktır. En agresif patlama taktiğidir.",
+        "hedefi": "Fiyatın Bollinger Üst Bandını delip geçmesi ve hacmin patlamasıyla rallinin fişeğini ateşlemek.",
+        "beklenti": "ADX'in 20 üzerine aniden tırmanması ve fiyatın bant dışında kapanış yapması.",
+        "tv_filters": [{"left": "ADX", "operation": "greater", "right": 20}, {"left": "relative_volume_10d_calc", "operation": "greater", "right": 1.2}]
+    },
+    "[ŞABLON 15] Dipten Dönüş (Küllerinden Doğuş)": {
+        "amacı": "Son 3 aydır çöken ancak son 1 ayda ana ortalamaların üzerine atarak hayata dönenleri tespit etmektir.",
+        "hedefi": "Klasik 'Bottom Fishing' taktiği ile kötü günleri geride bırakmış şirketleri en dipte almak.",
+        "beklenti": "Fiyatın SMA 50'yi geri kazanması ve ADX'in yeni bir yükseliş trendi teyidi vermesi.",
+        "tv_filters": [{"left": "Perf.3M", "operation": "less", "right": 0}, {"left": "Perf.1M", "operation": "greater", "right": 5}, {"left": "close", "operation": "greater", "right": "SMA50"}]
+    },
+    "[ŞABLON 16] Şelale Başlangıcı (Düşüş Trendi)": {
+        "amacı": "Diplerden dönüşün tam tersi senaryodur; zirveden yıkılmaya başlayan hisseleri bulur.",
+        "hedefi": "Açığa satış (Short) sinyali veya eldeki pozisyonu kapatmak için acil durum uyarısı.",
+        "beklenti": "Fiyatın tüm destekleri kırması ve düşerken hacmin artarak kurumsal satışı teyit etmesi.",
+        "tv_filters": [{"left": "close", "operation": "less", "right": "EMA20"}, {"left": "Perf.1M", "operation": "less", "right": 0}, {"left": "RSI", "operation": "less", "right": 45}]
+    },
+    "[ŞABLON 17] Ultra Sıkışma ve Hacim Şoku": {
+        "amacı": "EKG cihazındaki 'düz çizgi' misali volatilitesi ölmüş hisseye aniden giren parayı tarar.",
+        "hedefi": "Yön ararken EMA 20 üzerine atan hissede dar stop-loss ile asimetrik kâr yakalamak.",
+        "beklenti": "Çok düşük volatilite periyodunun ardından Rel Vol > 1.2 ile gelen hacim patlaması.",
+        "tv_filters": [{"left": "Volatility.D", "operation": "less", "right": 5}, {"left": "relative_volume_10d_calc", "operation": "greater", "right": 1.2}, {"left": "close", "operation": "greater", "right": "EMA20"}]
+    },
+    "[ŞABLON 18] Hareketli Ortalama Düzeltmesi (Holy Grail)": {
+        "amacı": "Ralliye kalkmış hissenin soluklanmak için EMA 20 desteğine geri çekildiği kusursuz alım yerini bulmak.",
+        "hedefi": "Trendi kaçırmadan, fiyatın EMA 20'nin tam %0 ile %3 üzerinde oturduğu Risksiz Girişi yakalamak.",
+        "beklenti": "Bütün göstergeler ralliyi kanıtlarken (ADX>20), fiyatın dinlenerek fırsat vermesi.",
+        "tv_filters": [{"left": "EMA20", "operation": "greater", "right": "EMA50"}, {"left": "ADX", "operation": "greater", "right": 20}, {"left": "Perf.1M", "operation": "greater", "right": 10}]
+    }
+}
+
+TAB5_CONFLUENCES = {
+    "[KESİŞİM A] Kutsal Kase (Trend + İndirimli Giriş)": {
+        "sablonlar": "Şablon 12 (Kurumsal Trend Onayı) + Şablon 18 (Hareketli Ortalama Düzeltmesi)",
+        "mantik": "Makro olarak kusursuz bir boğa trendinde olan hissenin, mikro olarak kâr satışları yiyip EMA 20 desteğine kadar gerilediği ve tam destekten tepki aldığı noktayı tespit eder.",
+        "neden": "Akıllı para yükselen bir hisseyi EMA 20'ye düştüğünde her zaman savunur. Stop-loss mesafeniz çok dardır, kazanma oranı (win-rate) en yüksek modellerden biridir.",
+        "tv_filters": [{"left": "SMA50", "operation": "greater", "right": "SMA200"}, {"left": "close", "operation": "greater", "right": "EMA20"}, {"left": "ADX", "operation": "greater", "right": 25}]
+    },
+    "[KESİŞİM B] Sıkışma Patlaması (Enerji Boşalımı)": {
+        "sablonlar": "Şablon 17 (Ultra Sıkışma) + Şablon 14 (Bollinger Patlaması)",
+        "mantik": "Volatilitenin %5'in altına indiği, hissenin ölü taklidi yaptığı bir dönemde aniden hacim girerek fiyatın Bollinger Üst bandını parçalamasıdır.",
+        "neden": "Fizikteki 'yay gerilmesi' prensibidir. Fiyat ne kadar uzun süre dar bir alanda sıkışırsa, kopuş o kadar şiddetli olur. Hacim geldiği saniye işleme girilir.",
+        "tv_filters": [{"left": "Volatility.D", "operation": "less", "right": 15}, {"left": "ADX", "operation": "greater", "right": 20}, {"left": "relative_volume_10d_calc", "operation": "greater", "right": 1.2}]
+    },
+    "[KESİŞİM C] Zümrüdüanka (Küllerinden Doğuş)": {
+        "sablonlar": "Şablon 15 (Dipten Dönüş) + Şablon 10 (Erken Trend ve SAR Onayı)",
+        "mantik": "Aylarca düşmüş, herkesin ümidi kestiği bir hissenin aniden 50 günlük ortalamasını yukarı kırması ve tüm momentum göstergelerinin (SAR, MACD, CCI) yeşile dönmesidir.",
+        "neden": "En devasa ralli başlangıçları, piyasanın unuttuğu hisselerde dipte başlar. Büyük fonların 'Toplama' evresini bitirip fiyatı sürmeye başladığının ilk matematiksel sinyalidir.",
+        "tv_filters": [{"left": "Perf.3M", "operation": "less", "right": 0}, {"left": "Perf.1M", "operation": "greater", "right": 0}, {"left": "close", "operation": "greater", "right": "SMA50"}, {"left": "MACD.macd", "operation": "greater", "right": "MACD.signal"}]
+    }
+}
+
+def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
+    url = f"https://scanner.tradingview.com/{mkt_config['tv_market']}/scan"
+    payload = {
+        "filter": [
+            {"left": "market", "operation": "equal", "right": mkt_config['tv_market']},
+            {"left": "type", "operation": "in_range", "right": ["stock", "dr", "fund"]}
+        ] + tv_filter_payload,
+        "options": {"lang": "en"}, "markets": [mkt_config['tv_market']],
+        "symbols": {"query": {"types": []}, "tickers": []},
+        "columns": ["name", "close", "volume", "RSI", "MACD.macd", "MACD.signal"],
+        "sort": {"sortBy": "name", "sortOrder": "asc"}, "range": [0, 450] 
+    }
+    try:
+        response = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            return [{"Hisse": item["d"][0], "Kapanış": safe_fmt(item["d"][1], '.2f'), "Hacim (Lot)": safe_fmt(item["d"][2], ',.0f'), "RSI": safe_fmt(item["d"][3], '.1f'), "Bağlantı": f"https://www.tradingview.com/chart/?symbol={mkt_config['tv_prefix']}{item['d'][0]}&interval=D"} for item in data]
+        return []
+    except Exception: return []
 
 # =============================================================================
 # UI RENDER MİMARİSİ
 # =============================================================================
 st.title("TRADER WORKSTATION")
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "HİBRİT TARAMA", 
     "MAKRO TREND KIRILIMI",
     "FIBONACCI İSTATİSTİK MATRİSİ",
-    "KESİŞİM"
+    "KESİŞİM",
+    "KANTİTATİF LABORATUVAR (YENİ)"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -407,7 +544,7 @@ with tab1:
         
                 if is_matched:
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
-                    macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"🟢 POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
+                    macd_status = f"NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
                     tv_prefix = mkt_config["tv_prefix"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
                     
@@ -511,9 +648,9 @@ with tab3:
                      column_config={
                          "Aşama / Durum": st.column_config.TextColumn("Döngü Aşaması", width="medium"),
                          "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
-                         "Tepe (0)": st.column_config.NumberColumn("Eski Zirve (0)", format="%.2f", help="Aşılması gereken veya aşılan zirve"),
-                         "Fib 0.618": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum Geri Çekilme Desteği"),
-                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Zirve kırılımı sonrası istatistiksel ana direnç"),
+                         "Tepe (0)": st.column_config.NumberColumn("Eski Zirve (0)", format="%.2f"),
+                         "Fib 0.618": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f"),
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Günlük)", display_text="Grafiği Aç")
                      })
 
@@ -523,7 +660,6 @@ with tab4:
     col_mkt4, col_btn4 = st.columns([3, 1])
     with col_mkt4: t4_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t4_mkt")
     with col_btn4: st.write("##"); run_perfect_scan = st.button("ALGORİTMAYI ATEŞLE", key="t4_btn")
-        
 
     if "tab4_rows" not in st.session_state: st.session_state.tab4_rows = []
     
@@ -540,13 +676,11 @@ with tab4:
             yf_tickers = [f"{s.replace('.', '-')}{mkt_config['yf_suffix']}" for s in market_symbols]
             
             with st.spinner("Makro Veri (5 Yıllık) ve Mikro Veri (1 Yıllık) Çoklu Havuzu Oluşturuluyor..."):
-                # Eşzamanlı iki havuz çekimi
                 df_weekly_all = fetch_macro_data_cached(tickers=yf_tickers)
                 df_daily_all = fetch_fib_data_cached(tickers=yf_tickers)
                 
-            with st.spinner("Çoklu zaman dilimi (Multi-Timeframe) kesişim matrisi hesaplanıyor..."):
+            with st.spinner("Çoklu zaman dilimi kesişim matrisi hesaplanıyor..."):
                 p_bar = st.progress(0)
-                
                 for idx, symbol in enumerate(market_symbols):
                     p_bar.progress((idx + 1) / len(market_symbols))
                     yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
@@ -556,18 +690,9 @@ with tab4:
                         df_d = df_daily_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open'])
                         
                         is_perfect, context = evaluate_perfect_storm(df_w, df_d)
-                        
                         if is_perfect:
                             tv_url = f"https://www.tradingview.com/chart/?symbol={mkt_config['tv_prefix']}{symbol}&interval=D"
-                            st.session_state.tab4_rows.append({
-                                "Hisse": symbol,
-                                "Güncel Fiyat": round(context["price"], 2),
-                                "Aşılan Makro Direnç": round(context["macro_trend_val"], 2),
-                                "Fibonacci 0.500": round(context["fib_0500"], 2),
-                                "Fibonacci 0.618": round(context["fib_0618"], 2),
-                                "Uzay Hedefi (1.618)": round(context["fib_target"], 2),
-                                "Bağlantı": tv_url
-                            })
+                            st.session_state.tab4_rows.append({"Hisse": symbol, "Güncel Fiyat": round(context["price"], 2), "Aşılan Makro Direnç": round(context["macro_trend_val"], 2), "Fibonacci 0.500": round(context["fib_0500"], 2), "Fibonacci 0.618": round(context["fib_0618"], 2), "Uzay Hedefi (1.618)": round(context["fib_target"], 2), "Bağlantı": tv_url})
                             
             st.markdown("<div style='color:#ff9900; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Kusursuz Fırtına taraması tamamlandı.</div>", unsafe_allow_html=True)
 
@@ -577,8 +702,87 @@ with tab4:
         st.dataframe(pd.DataFrame(st.session_state.tab4_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
-                         "Aşılan Makro Direnç": st.column_config.NumberColumn("Aşılan Makro Direnç", format="%.2f", help="Hissenin artık üzerinde tutunduğu tarihi düşen trend çizgisi"),
-                         "Fibonacci 0.618": st.column_config.NumberColumn("Fibonacci 0.618", format="%.2f", help="Günlükteki maksimum destek sınırı"),
-                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Yükselişin devamındaki istatistiksel varış noktası"),
+                         "Aşılan Makro Direnç": st.column_config.NumberColumn("Aşılan Makro Direnç", format="%.2f"),
+                         "Fibonacci 0.618": st.column_config.NumberColumn("Fibonacci 0.618", format="%.2f"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f"),
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Günlük)", display_text="Grafiği Aç")
                      })
+
+# ------------------------- TAB 5 (YENİ) -------------------------
+with tab5:
+    st.write("### KANTİTATİF FİLTRE & KESİŞİM LABORATUVARI")
+    
+    sub_tab_selection = st.radio("MODÜL SEÇİMİ:", ["18 TEMEL KANTİTATİF ŞABLON", "3 KUSURSUZ KESİŞİM (CONFLUENCE)"], horizontal=True)
+    st.write("---")
+    
+    if sub_tab_selection == "18 TEMEL KANTİTATİF ŞABLON":
+        col_sel, col_empty = st.columns([2, 1])
+        with col_sel:
+            selected_template_key = st.selectbox("İncelemek İstediğiniz Strateji Şablonunu Seçin:", list(TAB5_TEMPLATES.keys()))
+        
+        active_template = TAB5_TEMPLATES[selected_template_key]
+        
+        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (ŞABLON DETAYI)", expanded=True):
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Ana Amacı:</b><br><span style='color:#9ca3af;'>{active_template['amacı']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Trader Hedefi:</b><br><span style='color:#9ca3af;'>{active_template['hedefi']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Görülmesi Gereken (Teyit):</b><br><span style='color:#10b981;'>{active_template['beklenti']}</span></div>", unsafe_allow_html=True)
+            
+        col_mkt5, col_btn5 = st.columns([3, 1])
+        with col_mkt5:
+            t5_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t5_mkt_1")
+        with col_btn5:
+            st.write("##")
+            run_tab5_single = st.button("ŞABLONU ÇALIŞTIR", key="t5_btn_1")
+            
+        if "tab5_rows_single" not in st.session_state: st.session_state.tab5_rows_single = []
+            
+        if run_tab5_single:
+            mkt_config = MARKET_CONFIGS[t5_selected_mkt]
+            st.session_state.tab5_rows_single = []
+            with st.spinner("Şablon parametreleri uygulanıyor ve tarama yapılıyor..."):
+                results = scan_tab5_advanced_logic(mkt_config, active_template["tv_filters"])
+                st.session_state.tab5_rows_single = results
+                if not results:
+                    st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu şablona uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
+                    
+        if st.session_state.tab5_rows_single:
+            st.write("---")
+            st.dataframe(pd.DataFrame(st.session_state.tab5_rows_single), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+
+    else:
+        col_sel, col_empty = st.columns([2, 1])
+        with col_sel:
+            selected_conf_key = st.selectbox("İncelemek İstediğiniz Kesişim Modelini Seçin:", list(TAB5_CONFLUENCES.keys()))
+            
+        active_conf = TAB5_CONFLUENCES[selected_conf_key]
+        
+        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (KESİŞİM DETAYI)", expanded=True):
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Birleştirilen Şablonlar:</b><br><span style='color:#d97706; font-weight:600;'>{active_conf['sablonlar']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Kesişim Mantığı:</b><br><span style='color:#9ca3af;'>{active_conf['mantik']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Neden Buradan Alınır?</b><br><span style='color:#10b981;'>{active_conf['neden']}</span></div>", unsafe_allow_html=True)
+            
+        col_mkt5_c, col_btn5_c = st.columns([3, 1])
+        with col_mkt5_c:
+            t5_selected_mkt_c = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t5_mkt_2")
+        with col_btn5_c:
+            st.write("##")
+            run_tab5_conf = st.button("KESİŞİMİ ÇALIŞTIR", key="t5_btn_2")
+            
+        if "tab5_rows_conf" not in st.session_state: st.session_state.tab5_rows_conf = []
+            
+        if run_tab5_conf:
+            mkt_config = MARKET_CONFIGS[t5_selected_mkt_c]
+            st.session_state.tab5_rows_conf = []
+            with st.spinner("Kesişim parametreleri birleştiriliyor ve tarama yapılıyor..."):
+                results = scan_tab5_advanced_logic(mkt_config, active_conf["tv_filters"])
+                st.session_state.tab5_rows_conf = results
+                if not results:
+                    st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu kesişim modeline uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
+                    
+        if st.session_state.tab5_rows_conf:
+            st.write("---")
+            st.dataframe(pd.DataFrame(st.session_state.tab5_rows_conf), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
