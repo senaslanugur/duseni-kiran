@@ -450,8 +450,8 @@ def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI (3 YIL + HACİM)",
-    "KANTİTATİF LABORATUVAR"
+    "MAKRO TREND KIRILIMI",
+    "TARAMA FILTRELERI"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -515,22 +515,10 @@ with tab1:
 
 # ------------------------- TAB 2 -------------------------
 with tab2:
-    st.write("### HACİM ONAYLI MAKRO TREND KIRILIM STRATEJİSİ")
+    st.write("### MAKRO TREND KIRILIM ")
     col_mkt2, col_btn2 = st.columns([3, 1])
     with col_mkt2: t2_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t2_mkt")
     with col_btn2: st.write("##"); run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
-    
-    st.markdown("""
-    <div style='background-color:#111827; padding:15px; border-left:4px solid #10b981; margin-bottom:20px; margin-top:10px;'>
-        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Kurumsal Para (Smart Money) Avcısı Devrede:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Bu strateji günlük tuzakları görmezden gelir. Seçilen piyasada son 5 YILLIK HAFTALIK grafikleri tarar. ABD borsası için hacimli ilk 600 hisse baz alınır.</div>
-        <div style='color:#10b981; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [+] Koşul 1: 3-4 yıllık devasa düşen trend çizgisinin yukarı kırılması.<br>
-            [+] Koşul 2: Kırılım mumunun yeşil (Kapanış > Açılış) ve güçlü olması.<br>
-            [+] Koşul 3: Hacmin son 1 ayın (4 hafta) ortalamasından en az %50 DAHA YÜKSEK olması.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
     
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
     
@@ -588,7 +576,7 @@ with tab2:
 
 # ------------------------- TAB 3 -------------------------
 with tab3:
-    st.write("### KANTİTATİF FİLTRE & KESİŞİM LABORATUVARI")
+    st.write("### FILTRELER ve ONERILER")
     
     sub_tab_selection = st.radio("MODÜL SEÇİMİ:", ["18 TEMEL KANTİTATİF ŞABLON", "3 KUSURSUZ KESİŞİM (CONFLUENCE)"], horizontal=True)
     st.write("---")
@@ -600,7 +588,7 @@ with tab3:
         
         active_template = TAB5_TEMPLATES[selected_template_key]
         
-        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (ŞABLON DETAYI)", expanded=True):
+        with st.expander("ŞABLON DETAYI", expanded=True):
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Ana Amacı:</b><br><span style='color:#9ca3af;'>{active_template['amacı']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Trader Hedefi:</b><br><span style='color:#9ca3af;'>{active_template['hedefi']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Görülmesi Gereken (Teyit):</b><br><span style='color:#10b981;'>{active_template['beklenti']}</span></div>", unsafe_allow_html=True)
