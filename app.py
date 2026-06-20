@@ -155,6 +155,9 @@ def draw_macro_trend_chart(symbol, df_target, context):
     """Tab-2 İçin Kanıtlı Makro Trend ve Hacim Şoku Grafiği"""
     df = df_target.tail(150).copy() # Yaklaşık 3 yıllık veri
     
+    # HATA ÇÖZÜMÜ: Yahoo Finance'ten gelen sütunları (Close, Open vb.) küçük harfe standartla
+    df.columns = [str(c).lower() for c in df.columns] 
+    
     plt.style.use('dark_background')
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
     fig.suptitle(f"{symbol} | MAKRO TREND KIRILIMI (HAFTALIK)", fontsize=14, fontweight='bold', color='#10b981')
@@ -203,7 +206,6 @@ def draw_macro_trend_chart(symbol, df_target, context):
     fig.autofmt_xdate()
     plt.tight_layout()
     return fig
-
 def draw_tab3_dynamic_chart(symbol, df_target, template_data):
     """Tab-3 İçin Filtre Koşullarını Dinamik Olarak Ekrana Basan Akıllı Grafik"""
     df = df_target.tail(120).copy()
