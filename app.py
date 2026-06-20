@@ -831,4 +831,77 @@ with tab4:
         st.session_state.stored_contexts_t4 = {}
         
         with st.spinner(f"{t4_selected_mkt} Sembol verileri senkronize ediliyor..."):
-            market
+            market_symbols = get_all_market_symbols(mkt_config)
+            
+        if not market_symbols:
+            st.markdown("<div style='color:#ef4444; font-family:Inter; font-weight:600;'>[SİSTEM HATASI] Bağlantı hatası: Liste alınamadı.</div>", unsafe_allow_html=True)
+        else:
+            yf_tickers = [f"{s.replace('.', '-')}{mkt_config['yf_suffix']}" for s in market_symbols]
+            
+            with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(market_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
+                df_all = fetch_macro_data_cached(tickers=yf_tickers)
+            
+            with st.spinner("Fibonacci matrisi hesaplanıyor ve döngü aşamaları tespit ediliyor..."):
+                st.write("### SİSTEM LOG KONSOLU")
+                console_placeholder = st.empty()
+                p_bar = st.progress(0)
+                live_logs = [f"[SYSTEM]: Makro Fibonacci Ağı {len(market_symbols)} hisse için örülüyor...\n"]
+                console_placeholder.code("\n".join(live_logs))
+                
+                for idx, symbol in enumerate(market_symbols):
+                    p_bar.progress((idx + 1) / len(market_symbols))
+                    yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
+                    
+                    if hasattr(df_all.columns, 'levels') and yf_ticker_key in df_all.columns.levels[0]:
+                        df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Low', 'Close', 'Open'])
+                        
+                        is_fib_setup, context = evaluate_macro_fibonacci(df_symbol)
+                        
+                        if is_fib_setup:
+                            live_logs.append(f"[🎯 FIBONACCI] {symbol:<6} : {context['phase']}")
+                            tv_prefix = mkt_config["tv_prefix"]
+                            tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
+                            
+                            st.session_state.tab4_rows.append({
+                                "Aşama / Durum": context["phase"],
+                                "Hisse": symbol,
+                                "Güncel Fiyat": round(context["price"], 2),
+                                "Tarihi Zirve (0)": round(context["fib_0"], 2),
+                                "Altın Oran (0.618)": round(context["fib_0618"], 2),
+                                "Uzay Hedefi (1.618)": round(context["fib_target"], 2),
+                                "Bağlantı": tv_url
+                            })
+                            st.session_state.stored_dfs_t4[symbol] = df_symbol
+                            st.session_state.stored_contexts_t4[symbol] = context
+                        else:
+                            live_logs.append(f"[FAIL] {symbol:<6} : Fibonacci uyumu yok.")
+                    else:
+                        live_logs.append(f"[SKIP] {symbol:<6} : Yeterli geçmiş veri bulunamadı.")
+                        
+                    console_placeholder.code("\n".join(live_logs[-15:]))
+                            
+            st.markdown("<div style='color:#8b5cf6; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Fibonacci taraması tamamlandı.</div>", unsafe_allow_html=True)
+
+    if st.session_state.tab4_rows:
+        st.write("---")
+        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t4_selected_mkt})")
+        
+        res_df = pd.DataFrame(st.session_state.tab4_rows)
+        res_df = res_df.sort_values(by="Aşama / Durum")
+        
+        st.dataframe(res_df, use_container_width=True, hide_index=True,
+                     column_config={
+                         "Aşama / Durum": st.column_config.TextColumn("Döngü Aşaması", width="medium"),
+                         "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
+                         "Tarihi Zirve (0)": st.column_config.NumberColumn("Tarihi Zirve (0.0)", format="%.2f", help="Aşılması gereken makro zirve"),
+                         "Altın Oran (0.618)": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum geri çekilme ve alım bölgesi"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Kırılım sonrası istatistiksel ana direnç"),
+                         "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
+                     })
+                     
+        st.write("---"); st.write("### FIBONACCI GRAFİK İNCELEME İSTASYONU")
+        selected_stock_t4 = st.selectbox("Fibonacci çizim analizi için hisse seçin:", list(st.session_state.stored_dfs_t4.keys()), key="t4_plot")
+        if selected_stock_t4: 
+            df_plot = st.session_state.stored_dfs_t4[selected_stock_t4]
+            ctx_plot = st.session_state.stored_contexts_t4[selected_stock_t4]
+            st.pyplot(draw_macro_fib_chart(selected_stock_t4, df_plot, ctx_plot))
