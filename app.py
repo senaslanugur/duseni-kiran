@@ -83,7 +83,208 @@ def safe_fmt(val, fmt=".2f"):
     return f"{val:{fmt}}"
 
 # =============================================================================
-# 3. HİBRİT TARAMA FONKSİYONLARI 
+# 3. TRADINGVIEW TARZI PROFESYONEL GRAFİK MOTORLARI (MUM GRAFİKLER)
+# =============================================================================
+def draw_trader_chart(symbol, df_target):
+    """Tab-1 İçin Hibrit Analiz Grafiği (Candlesticks)"""
+    df = df_target.tail(90).copy() 
+    df['sma20'] = df['close'].rolling(20).mean()
+    df['sma50'] = df['close'].rolling(50).mean()
+    df['sma200'] = df['close'].rolling(200).mean()
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    df['rsi'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+    exp1 = df['close'].ewm(span=12, adjust=False).mean()
+    exp2 = df['close'].ewm(span=26, adjust=False).mean()
+    df['macd'] = exp1 - exp2
+    df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
+    df['hist'] = df['macd'] - df['signal']
+    
+    plt.style.use('dark_background')
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [3, 1, 1, 1]})
+    fig.suptitle(f"{symbol} | PROFESYONEL TRADER EKRANI", fontsize=14, fontweight='bold', color='#d97706')
+    
+    # 1. Mum Grafikler (Candlesticks)
+    up = df['close'] >= df['open']
+    down = df['close'] < df['open']
+    width = 0.6
+    
+    ax1.bar(df.index[up], df['close'][up] - df['open'][up], width, bottom=df['open'][up], color='#10b981', edgecolor='#10b981', alpha=0.9)
+    ax1.bar(df.index[down], df['open'][down] - df['close'][down], width, bottom=df['close'][down], color='#ef4444', edgecolor='#ef4444', alpha=0.9)
+    ax1.vlines(df.index[up], df['low'][up], df['high'][up], color='#10b981', linewidth=1)
+    ax1.vlines(df.index[down], df['low'][down], df['high'][down], color='#ef4444', linewidth=1)
+    
+    ax1.plot(df.index, df['sma20'], color='#00ffff', label='SMA 20', linestyle='--', linewidth=1)
+    ax1.plot(df.index, df['sma50'], color='#ff00ff', label='SMA 50', linestyle='--', linewidth=1)
+    ax1.plot(df.index, df['sma200'], color='#ffff00', label='SMA 200', linestyle='-', linewidth=1.2)
+    ax1.set_title("FIYAT TRENDI & HAREKETLI ORTALAMALAR", color='#9ca3af', loc='left', fontsize=10)
+    ax1.legend(loc='upper left', frameon=False)
+    ax1.grid(True, alpha=0.1)
+    
+    # 2. Hacim
+    colors_vol = ['#10b981' if c else '#ef4444' for c in up]
+    colors_vol[-3], colors_vol[-2], colors_vol[-1] = '#374151', '#6b7280', '#00ffff' 
+    ax2.bar(df.index, df['volume'], color=colors_vol, width=0.6, alpha=0.85)
+    ax2.set_title("HACIM DAGILIMI (V3 > V2 > V1)", color='#9ca3af', loc='left', fontsize=10)
+    ax2.grid(True, alpha=0.1)
+    
+    # 3. RSI
+    ax3.plot(df.index, df['rsi'], color='#8b5cf6', linewidth=1.5)
+    ax3.axhline(50, color='#ffffff', linestyle=':', alpha=0.3)
+    ax3.fill_between(df.index, df['rsi'], 50, where=(df['rsi'] >= 50), color='#8b5cf6', alpha=0.1)
+    ax3.set_title("GORECELI GUC ENDEKSI (RSI)", color='#9ca3af', loc='left', fontsize=10)
+    ax3.set_ylim(10, 90)
+    ax3.grid(True, alpha=0.1)
+    
+    # 4. MACD
+    ax4.plot(df.index, df['macd'], color='#06b6d4', label='MACD', linewidth=1.2)
+    ax4.plot(df.index, df['signal'], color='#f43f5e', label='Sinyal', linewidth=1.2)
+    ax4.bar(df.index, df['hist'], color=['#10b981' if x >= 0 else '#ef4444' for x in df['hist']], width=0.5, alpha=0.5)
+    ax4.axhline(0, color='#ffffff', linestyle='-', alpha=0.2)
+    ax4.set_title("MACD KESISIMI", color='#9ca3af', loc='left', fontsize=10)
+    ax4.legend(loc='upper left', frameon=False)
+    ax4.grid(True, alpha=0.1)
+    
+    ax4.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
+
+def draw_macro_trend_chart(symbol, df_target, context):
+    """Tab-2 İçin Kanıtlı Makro Trend ve Hacim Şoku Grafiği"""
+    df = df_target.tail(150).copy() # Yaklaşık 3 yıllık veri
+    
+    plt.style.use('dark_background')
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 9), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+    fig.suptitle(f"{symbol} | MAKRO TREND KIRILIMI (HAFTALIK)", fontsize=14, fontweight='bold', color='#10b981')
+    
+    # Mum Grafikler (Haftalık olduğu için width daha geniş tutulur)
+    up = df['close'] >= df['open']
+    down = df['close'] < df['open']
+    width = 4 
+    
+    ax1.bar(df.index[up], df['close'][up] - df['open'][up], width, bottom=df['open'][up], color='#10b981', edgecolor='#10b981', alpha=0.9)
+    ax1.bar(df.index[down], df['open'][down] - df['close'][down], width, bottom=df['close'][down], color='#ef4444', edgecolor='#ef4444', alpha=0.9)
+    ax1.vlines(df.index[up], df['low'][up], df['high'][up], color='#10b981', linewidth=1.5)
+    ax1.vlines(df.index[down], df['low'][down], df['high'][down], color='#ef4444', linewidth=1.5)
+    
+    # Makro Düşen Trendin Matematiksel Çizimi
+    u_start_b = context['u_start_b']
+    max_u_slope = context['max_u_slope']
+    u_start_p = context['u_start_p']
+    
+    trend_dates = df_target.index[u_start_b:]
+    trend_prices = [u_start_p + max_u_slope * (i - u_start_b) for i in range(u_start_b, len(df_target))]
+    
+    ax1.plot(trend_dates, trend_prices, color='#f59e0b', linewidth=2.5, linestyle='--', label='Kırılan Ana Direnç')
+    ax1.scatter(df_target.index[u_start_b], u_start_p, color='#f59e0b', s=100, zorder=5, label='Tarihi Zirve') 
+    
+    # Kırılım anını ve mumunu işaretle
+    ax1.scatter(df.index[-1], df['high'].iloc[-1] * 1.05, color='#00ffff', marker='v', s=150, zorder=5, label='Kırılım Onayı')
+    
+    ax1.set_title("UZUN VADELİ BASKI VE YUKARI KOPUŞ", color='#9ca3af', loc='left', fontsize=10)
+    ax1.legend(loc='upper right', frameon=False)
+    ax1.grid(True, alpha=0.1)
+    
+    # Hacim Şoku Gösterimi
+    colors_vol = ['#1f77b4'] * len(df)
+    colors_vol[-1] = '#f59e0b' # Güncel barın devasa hacmi
+    ax2.bar(df.index, df['volume'], color=colors_vol, width=4, alpha=0.85)
+    
+    avg_vol = df['volume'].iloc[-5:-1].mean()
+    ax2.axhline(avg_vol * 1.5, color='#10b981', linestyle=':', linewidth=2, label='+%50 Kurumsal Hacim Şartı')
+    
+    ax2.set_title(f"HACİM PATLAMASI (+%{context['vol_increase']:.0f})", color='#9ca3af', loc='left', fontsize=10)
+    ax2.legend(loc='upper left', frameon=False)
+    ax2.grid(True, alpha=0.1)
+    
+    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
+
+def draw_tab3_dynamic_chart(symbol, df_target, template_data):
+    """Tab-3 İçin Filtre Koşullarını Dinamik Olarak Ekrana Basan Akıllı Grafik"""
+    df = df_target.tail(120).copy()
+    
+    # Tüm ihtimaller için temel indikatörleri hesapla
+    df['SMA50'] = df['close'].rolling(50).mean()
+    df['SMA200'] = df['close'].rolling(200).mean()
+    df['EMA5'] = df['close'].ewm(span=5, adjust=False).mean()
+    df['EMA20'] = df['close'].ewm(span=20, adjust=False).mean()
+    df['EMA50'] = df['close'].ewm(span=50, adjust=False).mean()
+    
+    df['BB_mid'] = df['close'].rolling(20).mean()
+    df['BB_std'] = df['close'].rolling(20).std()
+    df['BB_up'] = df['BB_mid'] + 2 * df['BB_std']
+    df['BB_low'] = df['BB_mid'] - 2 * df['BB_std']
+    
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['rsi'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
+    
+    # Şablondaki hedefi string olarak birleştir, grafiğe ne çizeceğimizi buradan anlasın
+    desc = (template_data.get('amacı', '') + " " + template_data.get('hedefi', '') + " " + template_data.get('beklenti', '')).lower()
+    
+    plt.style.use('dark_background')
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1, 1]})
+    fig.suptitle(f"{symbol} | KANTİTATİF ŞABLON TEYİT EKRANI", fontsize=14, fontweight='bold', color='#8b5cf6')
+    
+    # Mum Grafikler (Standart)
+    up = df['close'] >= df['open']
+    down = df['close'] < df['open']
+    width = 0.6
+    
+    ax1.bar(df.index[up], df['close'][up] - df['open'][up], width, bottom=df['open'][up], color='#10b981', edgecolor='#10b981')
+    ax1.bar(df.index[down], df['open'][down] - df['close'][down], width, bottom=df['close'][down], color='#ef4444', edgecolor='#ef4444')
+    ax1.vlines(df.index[up], df['low'][up], df['high'][up], color='#10b981', linewidth=1)
+    ax1.vlines(df.index[down], df['low'][down], df['high'][down], color='#ef4444', linewidth=1)
+    
+    # --- YZ ÇİZİM MOTORU (Koşullara göre grafik ekleme) ---
+    if "ema" in desc or "ema5" in desc or "ema20" in desc or "ema50" in desc:
+        ax1.plot(df.index, df['EMA5'], color='#f472b6', label='EMA 5 (Kısa İvme)', linewidth=1.2)
+        ax1.plot(df.index, df['EMA20'], color='#60a5fa', label='EMA 20 (Destek)', linewidth=1.2)
+        ax1.plot(df.index, df['EMA50'], color='#f59e0b', label='EMA 50 (Ana Yön)', linewidth=1.2)
+        
+    if "sma" in desc or "sma50" in desc or "sma200" in desc or "kurumsal" in desc or "stage 2" in desc:
+        ax1.plot(df.index, df['SMA50'], color='#f59e0b', label='SMA 50', linestyle='--', linewidth=1.5)
+        ax1.plot(df.index, df['SMA200'], color='#eab308', label='SMA 200 (Makro Yön)', linewidth=1.5)
+        
+    if "bollinger" in desc or "sıkışma" in desc or "vcp" in desc or "daralma" in desc or "bant" in desc:
+        ax1.plot(df.index, df['BB_up'], color='#94a3b8', linestyle=':', label='BB Üst Bant')
+        ax1.plot(df.index, df['BB_low'], color='#94a3b8', linestyle=':')
+        ax1.fill_between(df.index, df['BB_up'], df['BB_low'], color='#94a3b8', alpha=0.08)
+        
+    ax1.legend(loc='upper left', frameon=False)
+    ax1.set_title("FIYAT VE DİNAMİK FİLTRE GÖSTERGELERİ", color='#9ca3af', loc='left', fontsize=10)
+    ax1.grid(True, alpha=0.1)
+    
+    # Hacim Onayı
+    colors_vol = ['#10b981' if c else '#ef4444' for c in up]
+    if "hacim" in desc or "rel vol" in desc:
+        colors_vol[-1] = '#00ffff' # Şok hacmi vurgula
+    ax2.bar(df.index, df['volume'], color=colors_vol, width=0.6, alpha=0.85)
+    ax2.set_title("HACİM DESTEĞİ", color='#9ca3af', loc='left', fontsize=10)
+    ax2.grid(True, alpha=0.1)
+    
+    # RSI Göstergesi
+    ax3.plot(df.index, df['rsi'], color='#8b5cf6', linewidth=1.5)
+    ax3.axhline(50, color='#ffffff', linestyle=':', alpha=0.3)
+    if "aşırı" in desc or "rsi" in desc:
+        ax3.fill_between(df.index, df['rsi'], 50, where=(df['rsi'] >= 50), color='#8b5cf6', alpha=0.15)
+    ax3.set_title("MOMENTUM (RSI 14)", color='#9ca3af', loc='left', fontsize=10)
+    ax3.set_ylim(10, 90)
+    ax3.grid(True, alpha=0.1)
+    
+    ax3.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
+
+# =============================================================================
+# 4. HİBRİT TARAMA FONKSİYONLARI 
 # =============================================================================
 def scan_tradingview_by_timeframe(tf_config, mkt_config):
     url = f"https://scanner.tradingview.com/{mkt_config['tv_market']}/scan"
@@ -130,56 +331,8 @@ def check_yfinance_volume_condition(symbol, tf_config, mkt_config):
         return (v3 > v2 > v1), v_data, df_target
     except Exception: return False, None, None
 
-def draw_trader_chart(symbol, df_target):
-    df = df_target.tail(60).copy() 
-    df['sma20'] = df['close'].rolling(20).mean()
-    df['sma50'] = df['close'].rolling(50).mean()
-    df['sma200'] = df['close'].rolling(200).mean()
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df['rsi'] = 100 - (100 / (1 + (gain / (loss + 1e-9))))
-    exp1 = df['close'].ewm(span=12, adjust=False).mean()
-    exp2 = df['close'].ewm(span=26, adjust=False).mean()
-    df['macd'] = exp1 - exp2
-    df['signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-    df['hist'] = df['macd'] - df['signal']
-    
-    plt.style.use('dark_background')
-    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(15, 12), sharex=True, gridspec_kw={'height_ratios': [3, 1.2, 1.2, 1.2]})
-    fig.suptitle(f"{symbol} | DETAYLI TEKNİK ANALİZ WORKSTATION", fontsize=14, fontweight='bold', color='#d97706')
-    ax1.plot(df.index, df['close'], color='#ffffff', label='Kapanış', linewidth=1.5)
-    ax1.plot(df.index, df['sma20'], color='#00ffff', label='SMA 20', linestyle='--', linewidth=1)
-    ax1.plot(df.index, df['sma50'], color='#ff00ff', label='SMA 50', linestyle='--', linewidth=1)
-    ax1.plot(df.index, df['sma200'], color='#ffff00', label='SMA 200', linestyle='-', linewidth=1.2)
-    ax1.set_title("FIYAT TRENDI & HAREKETLI ORTALAMALAR", color='#9ca3af', loc='left', fontsize=10)
-    ax1.legend(loc='upper left', frameon=False)
-    ax1.grid(True, alpha=0.1)
-    colors = ['#1f77b4'] * len(df)
-    colors[-3], colors[-2], colors[-1] = '#374151', '#6b7280', '#10b981' 
-    ax2.bar(df.index, df['volume'], color=colors, width=0.6, alpha=0.85)
-    ax2.set_title("HACIM DAGILIMI (V3 > V2 > V1)", color='#9ca3af', loc='left', fontsize=10)
-    ax2.grid(True, alpha=0.1)
-    ax3.plot(df.index, df['rsi'], color='#8b5cf6', linewidth=1.5)
-    ax3.axhline(50, color='#ffffff', linestyle=':', alpha=0.3)
-    ax3.fill_between(df.index, df['rsi'], 50, where=(df['rsi'] >= 50), color='#8b5cf6', alpha=0.1)
-    ax3.set_title("GORECELI GUC ENDEKSI (RSI)", color='#9ca3af', loc='left', fontsize=10)
-    ax3.set_ylim(10, 90)
-    ax3.grid(True, alpha=0.1)
-    ax4.plot(df.index, df['macd'], color='#06b6d4', label='MACD', linewidth=1.2)
-    ax4.plot(df.index, df['signal'], color='#f43f5e', label='Sinyal', linewidth=1.2)
-    ax4.bar(df.index, df['hist'], color=['#10b981' if x >= 0 else '#ef4444' for x in df['hist']], width=0.5, alpha=0.5)
-    ax4.axhline(0, color='#ffffff', linestyle='-', alpha=0.2)
-    ax4.set_title("MACD KESISIMI", color='#9ca3af', loc='left', fontsize=10)
-    ax4.legend(loc='upper left', frameon=False)
-    ax4.grid(True, alpha=0.1)
-    ax4.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
-    fig.autofmt_xdate()
-    plt.tight_layout()
-    return fig
-
 # =============================================================================
-# 4. MAKRO TREND VE KANTİTATİF FONKSİYONLAR
+# 5. MAKRO TREND VE KANTİTATİF FONKSİYONLAR
 # =============================================================================
 def get_all_market_symbols(mkt_config):
     url = f"https://scanner.tradingview.com/{mkt_config['tv_market']}/scan"
@@ -230,67 +383,12 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     vol_increase_pct = (((curr_vol / avg_vol_1m) - 1) * 100) if avg_vol_1m > 0 else 0
 
     if line_crossed and is_green_candle and is_volume_backed:
-        return True, {"price": closes[curr_idx], "trend_val": curr_trendline, "u_start_p": u_start_p, "vol_increase": vol_increase_pct}
+        # Görselleştirme için trend indekslerini de döndürüyoruz
+        return True, {"price": closes[curr_idx], "trend_val": curr_trendline, "u_start_p": u_start_p, "u_start_b": u_start_b, "max_u_slope": max_u_slope, "vol_increase": vol_increase_pct}
     return False, None
 
 # =============================================================================
-# (GİZLİ) FIBONACCI VE KESİŞİM FONKSİYONLARI (İLERİDE KULLANILMAK ÜZERE KORUNDU)
-# =============================================================================
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_fib_data_cached(tickers):
-    return yf.download(tickers=tickers, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
-
-def evaluate_auto_fibonacci(df, lookback_bars=252):
-    if df is None or len(df) < 50: return False, None
-    df_calc = df.tail(lookback_bars).copy()
-    highs, lows, closes, opens = df_calc['High'].values, df_calc['Low'].values, df_calc['Close'].values, df_calc['Open'].values
-    min_idx = np.argmin(lows)
-    if min_idx >= len(highs) - 15: return False, None 
-    max_idx = min_idx + np.argmax(highs[min_idx : -15])
-    swing_high, swing_low = highs[max_idx], lows[min_idx]
-    diff = swing_high - swing_low
-    if diff <= 0: return False, None
-    fib_0, fib_0236, fib_0382 = swing_high, swing_high - 0.236 * diff, swing_high - 0.382 * diff
-    fib_0500, fib_0618, fib_0786 = swing_high - 0.500 * diff, swing_high - 0.618 * diff, swing_high - 0.786 * diff
-    fib_1, fib_ext_1618 = swing_low, swing_high + 0.618 * diff
-    curr_close, curr_open = closes[-1], opens[-1]
-    lowest_since_peak = np.min(lows[max_idx:])
-    valid_pullback = lowest_since_peak <= fib_0236
-    if not valid_pullback: return False, None
-    in_golden_zone = (fib_0618 <= curr_close <= fib_0500)
-    dist_0500, dist_0618 = abs(curr_close - fib_0500) / fib_0500, abs(curr_close - fib_0618) / fib_0618
-    near_golden_zone = (dist_0500 < 0.015) or (dist_0618 < 0.015)
-    is_green_candle, valid_trend = curr_close > curr_open, curr_close > fib_0786
-    is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
-    is_breakout = curr_close > swing_high
-    if is_golden_pocket: phase = "🟡 Pullback"
-    elif is_breakout: phase = "Zirve Kırılımı"
-    else: return False, None
-    return True, {"phase": phase, "price": curr_close, "fib_0": fib_0, "fib_0382": fib_0382, "fib_0500": fib_0500, "fib_0618": fib_0618, "fib_target": fib_ext_1618}
-
-def evaluate_perfect_storm(df_weekly, df_daily, macro_lookback=200, fib_lookback=252):
-    is_fib, fib_context = evaluate_auto_fibonacci(df_daily, lookback_bars=fib_lookback)
-    if not is_fib or "Pullback" not in fib_context["phase"]: return False, None
-    if df_weekly is None or len(df_weekly) < macro_lookback + 5: return False, None
-    highs, closes = df_weekly['High'].values, df_weekly['Close'].values
-    curr_idx = len(highs) - 1
-    start_search = max(0, curr_idx - macro_lookback)
-    u_start_b = start_search + np.argmax(highs[start_search:curr_idx])
-    u_start_p = highs[u_start_b]
-    max_u_slope, u_sec_b = -np.inf, -1
-    search_end = max(u_start_b + 1, curr_idx - 4)
-    for i in range(u_start_b + 1, search_end):
-        slope = (highs[i] - u_start_p) / (i - u_start_b)
-        if slope < 0 and slope > max_u_slope: max_u_slope, u_sec_b = slope, i
-    if u_sec_b == -1: return False, None
-    curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
-    is_above_macro_trend = closes[curr_idx] > (curr_trendline * 1.02)
-    if is_above_macro_trend:
-        return True, {"price": fib_context["price"], "fib_0618": fib_context["fib_0618"], "fib_0500": fib_context["fib_0500"], "macro_trend_val": curr_trendline, "macro_peak": u_start_p, "fib_target": fib_context["fib_target"]}
-    return False, None
-
-# =============================================================================
-# 5. KANTİTATİF LABORATUVAR VERİ YAPISI
+# 6. KANTİTATİF LABORATUVAR VERİ YAPISI
 # =============================================================================
 TAB5_TEMPLATES = {
     "[ŞABLON 1] Mikro Trend Dönüşü (Erken Sinyal)": {
@@ -517,9 +615,11 @@ with tab1:
     if st.session_state.final_rows:
         st.write("---"); st.write(f"### ONAYLANMIŞ HİSSELER ({st.session_state.last_tf})")
         st.dataframe(pd.DataFrame(st.session_state.final_rows), use_container_width=True, hide_index=True, column_config={"Hisse": st.column_config.TextColumn("Hisse"), "Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+        
         st.write("---"); st.write("### GRAFİK İNCELEME İSTASYONU")
         selected_stock_to_plot = st.selectbox("Detaylı inceleme için hisse seçin:", list(st.session_state.stored_dfs.keys()), key="t1_plot")
-        if selected_stock_to_plot: st.pyplot(draw_trader_chart(selected_stock_to_plot, st.session_state.stored_dfs[selected_stock_to_plot]))
+        if selected_stock_to_plot: 
+            st.pyplot(draw_trader_chart(selected_stock_to_plot, st.session_state.stored_dfs[selected_stock_to_plot]))
 
 # ------------------------- TAB 2 -------------------------
 with tab2:
@@ -529,10 +629,14 @@ with tab2:
     with col_btn2: st.write("##"); run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
     
     if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
+    if "stored_dfs_t2" not in st.session_state: st.session_state.stored_dfs_t2 = {}
+    if "stored_contexts_t2" not in st.session_state: st.session_state.stored_contexts_t2 = {}
     
     if run_macro_scan:
         mkt_config = MARKET_CONFIGS[t2_selected_mkt]
         st.session_state.tab2_rows = []
+        st.session_state.stored_dfs_t2 = {}
+        st.session_state.stored_contexts_t2 = {}
         
         with st.spinner(f"{t2_selected_mkt} Sembol verileri senkronize ediliyor..."):
             market_symbols = get_all_market_symbols(mkt_config)
@@ -574,6 +678,8 @@ with tab2:
                                 "Hacim Patlaması": f"+%{context['vol_increase']:.1f}",
                                 "Bağlantı": tv_url
                             })
+                            st.session_state.stored_dfs_t2[symbol] = df_symbol
+                            st.session_state.stored_contexts_t2[symbol] = context
                         else:
                             live_logs.append(f"[FAIL] {symbol:<6} : Makro kırılım veya hacim onayı yok.")
                     else:
@@ -585,11 +691,18 @@ with tab2:
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write(f"### HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
+        st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
                      })
+                     
+        st.write("---"); st.write("### MAKRO GRAFİK İNCELEME İSTASYONU")
+        selected_stock_t2 = st.selectbox("Detaylı kırılım analizi için hisse seçin:", list(st.session_state.stored_dfs_t2.keys()), key="t2_plot")
+        if selected_stock_t2: 
+            df_plot = st.session_state.stored_dfs_t2[selected_stock_t2]
+            ctx_plot = st.session_state.stored_contexts_t2[selected_stock_t2]
+            st.pyplot(draw_macro_trend_chart(selected_stock_t2, df_plot, ctx_plot))
 
 # ------------------------- TAB 3 -------------------------
 with tab3:
@@ -638,7 +751,7 @@ with tab3:
                     st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu şablona uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
                 else:
                     for item in results:
-                        time.sleep(0.05) # Görsel terminal akış efekti
+                        time.sleep(0.05) 
                         live_logs.append(f"[OK]   {item['Hisse']:<6} : Teknik şartlar doğrulandı.")
                         console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
@@ -646,6 +759,20 @@ with tab3:
         if st.session_state.tab5_rows_single:
             st.write("---")
             st.dataframe(pd.DataFrame(st.session_state.tab5_rows_single), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+            
+            st.write("---"); st.write("### DİNAMİK FİLTRE ONAY EKRANI")
+            symbols = [row['Hisse'] for row in st.session_state.tab5_rows_single]
+            selected_stock_t3 = st.selectbox("Filtre teyidi için hisse seçin:", symbols, key="t3_single_plot")
+            if selected_stock_t3:
+                mkt_config = MARKET_CONFIGS[t5_selected_mkt]
+                clean_sym = selected_stock_t3.replace('.', '-')
+                yf_ticker = f"{clean_sym}{mkt_config['yf_suffix']}"
+                with st.spinner("Koşullu grafik verisi çekiliyor..."):
+                    df_plot = yf.download(tickers=yf_ticker, period="1y", interval="1d", progress=False)
+                    if not df_plot.empty:
+                        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
+                        df_plot.columns = [c.lower() for c in df_plot.columns]
+                        st.pyplot(draw_tab3_dynamic_chart(selected_stock_t3, df_plot, active_template))
 
     else:
         col_sel, col_empty = st.columns([2, 1])
@@ -687,7 +814,7 @@ with tab3:
                     st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu kesişim modeline uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
                 else:
                     for item in results:
-                        time.sleep(0.05) # Görsel terminal akış efekti
+                        time.sleep(0.05) 
                         live_logs.append(f"[OK]   {item['Hisse']:<6} : Kesişim şartları doğrulandı.")
                         console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
@@ -695,3 +822,19 @@ with tab3:
         if st.session_state.tab5_rows_conf:
             st.write("---")
             st.dataframe(pd.DataFrame(st.session_state.tab5_rows_conf), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+            
+            st.write("---"); st.write("### DİNAMİK FİLTRE ONAY EKRANI")
+            symbols = [row['Hisse'] for row in st.session_state.tab5_rows_conf]
+            selected_stock_t3_c = st.selectbox("Kesişim teyidi için hisse seçin:", symbols, key="t3_conf_plot")
+            if selected_stock_t3_c:
+                mkt_config = MARKET_CONFIGS[t5_selected_mkt_c]
+                clean_sym = selected_stock_t3_c.replace('.', '-')
+                yf_ticker = f"{clean_sym}{mkt_config['yf_suffix']}"
+                with st.spinner("Koşullu grafik verisi çekiliyor..."):
+                    df_plot = yf.download(tickers=yf_ticker, period="1y", interval="1d", progress=False)
+                    if not df_plot.empty:
+                        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
+                        df_plot.columns = [c.lower() for c in df_plot.columns]
+                        # Kesişim modelleri için şablon detaylarını mock bir sözlükte gönderiyoruz ki ne çizeceğini bilsin.
+                        mock_template = {"amacı": active_conf['sablonlar']}
+                        st.pyplot(draw_tab3_dynamic_chart(selected_stock_t3_c, df_plot, mock_template))
