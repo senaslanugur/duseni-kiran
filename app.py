@@ -549,9 +549,9 @@ def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI (TAM OTONOM)",
+    "MAKRO TREND KIRILIMI",
     "TARAMA FILTRELERI",
-    "MAKRO FIBONACCI (HAFTALIK)"
+    "MAKRO FIBONACCI"
 ])
 
 # ------------------------- TAB 1 -------------------------
