@@ -292,9 +292,6 @@ def draw_macro_fib_chart(symbol, df_target, context):
     ax1.axhline(context['fib_0618'], color='#10b981', linestyle='-', linewidth=2, alpha=0.9, label='Fib 0.618 (Golden Pocket)')
     ax1.axhline(context['fib_1'], color='#3b82f6', linestyle='-', linewidth=1.5, alpha=0.8, label='Fib 1.0 (Makro Dip)')
     
-    if context['phase'] == "[ZIRVE KIRILIMI] Fib Uzayı":
-        ax1.axhline(context['fib_target'], color='#c084fc', linestyle='-.', linewidth=2, label='Uzay Hedefi (1.618)')
-        
     ax1.axhspan(context['fib_0618'], context['fib_0500'], color='#f59e0b', alpha=0.15, label='Altın Bölge (Alım Alanı)')
     
     ax1.set_title(f"AŞAMA: {context['phase']}", color='#9ca3af', loc='left', fontsize=11, fontweight='bold')
@@ -460,7 +457,6 @@ def evaluate_macro_fibonacci(df, lookback_bars=150):
     if diff <= 0: return False, None
     
     fib_0 = swing_high
-    fib_0236 = swing_high - 0.236 * diff
     fib_0382 = swing_high - 0.382 * diff
     fib_0500 = swing_high - 0.500 * diff
     fib_0618 = swing_high - 0.618 * diff
@@ -478,20 +474,16 @@ def evaluate_macro_fibonacci(df, lookback_bars=150):
     valid_trend = curr_close > fib_0786
     is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
     
-    is_breakout = curr_close > swing_high
-    
+    # SADECE 0.618 Pullback Bölgesi Hedefleniyor (Kırılımlar elendi)
     if is_golden_pocket: 
         phase = "[ALIM ARALIĞI] 0.618 Pullback"
-    elif is_breakout: 
-        phase = "[ZIRVE KIRILIMI] Fib Uzayı"
-    else: 
-        return False, None
+        return True, {
+            "phase": phase, "price": curr_close, "fib_0": fib_0, "fib_0382": fib_0382, 
+            "fib_0500": fib_0500, "fib_0618": fib_0618, "fib_1": fib_1, "fib_target": fib_ext_1618, 
+            "lookback_bars": lookback_bars
+        }
         
-    return True, {
-        "phase": phase, "price": curr_close, "fib_0": fib_0, "fib_0382": fib_0382, 
-        "fib_0500": fib_0500, "fib_0618": fib_0618, "fib_1": fib_1, "fib_target": fib_ext_1618, 
-        "lookback_bars": lookback_bars
-    }
+    return False, None
 
 # =============================================================================
 # 5. KANTİTATİF LABORATUVAR VERİ YAPISI
@@ -549,9 +541,9 @@ def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI",
+    "MAKRO TREND KIRILIMI (TAM OTONOM)",
     "TARAMA FILTRELERI",
-    "MAKRO FIBONACCI"
+    "MAKRO FIBONACCI (HAFTALIK)"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -601,7 +593,7 @@ with tab1:
                 if is_matched:
                     live_logs.append(f"[OK]   {symbol:<6} : V1:{v1_f} < V2:{v2_f} < V3:{v3_f} (Hacim Onaylandı)")
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
-                    macd_status = f"[-] NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"[+] POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
+                    macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"🟢 POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
                     tv_prefix = mkt_config["tv_prefix"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
                     
@@ -668,7 +660,7 @@ with tab2:
                         is_breakout, context = evaluate_macro_trader_breakout(df_symbol, lookback_bars=200)
                         
                         if is_breakout:
-                            live_logs.append(f"[BREAKOUT] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
+                            live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -693,7 +685,7 @@ with tab2:
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write(f"### HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
+        st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
@@ -851,10 +843,9 @@ with tab4:
     st.markdown("""
     <div style='background-color:#111827; padding:15px; border-left:4px solid #8b5cf6; margin-bottom:20px; margin-top:10px;'>
         <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Makro İstatistiksel Fırsat Avcısı:</div>
-        <div style='color:#9ca3af; font-size:13px;'>Tab-2'de kullanılan Haftalık Makro Veri Havuzunu kullanarak devasa bir Fibonacci ağı çizer. Piyasayı 2 farklı Matematiksel Faza göre sınıflandırır:</div>
+        <div style='color:#9ca3af; font-size:13px;'>Haftalık Makro Veri Havuzunu kullanarak devasa bir Fibonacci ağı çizer. Uzay kırılımlarını (breakout) tamamen es geçerek sadece asimetrik kârın gizlendiği güvenli bölgeye odaklanır:</div>
         <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            [AŞAMA 1]: "[ALIM ARALIĞI] 0.618 Pullback" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranından destek alarak yeşil mum yaktığı risksiz bölge.<br>
-            [AŞAMA 2]: "[ZIRVE KIRILIMI] Fib Uzayı" - Hissenin makro tarihi zirvesini (Fib 0.0) kırıp geçtiği ve önünde 1.618 uzay hedefinden başka hiçbir direncin kalmadığı patlama evresi.
+            🎯 SADECE ODAKLANILAN AŞAMA: "[ALIM ARALIĞI] 0.618 Pullback" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranından destek alarak yeşil mum yaktığı en risksiz maliyetlenme bölgesidir.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -880,11 +871,11 @@ with tab4:
             with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(market_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
                 df_all = fetch_macro_data_cached(tickers=yf_tickers)
             
-            with st.spinner("Fibonacci matrisi hesaplanıyor ve döngü aşamaları tespit ediliyor..."):
+            with st.spinner("Fibonacci matrisi hesaplanıyor ve 0.618 Pullback sinyalleri taranıyor..."):
                 st.write("### SİSTEM LOG KONSOLU")
                 console_placeholder = st.empty()
                 p_bar = st.progress(0)
-                live_logs = [f"[SYSTEM]: Makro Fibonacci Ağı {len(market_symbols)} hisse için örülüyor...\n"]
+                live_logs = [f"[SYSTEM]: Sadece [ALIM ARALIĞI] odaklı Fibonacci Ağı {len(market_symbols)} hisse için örülüyor...\n"]
                 console_placeholder.code("\n".join(live_logs))
                 
                 for idx, symbol in enumerate(market_symbols):
@@ -897,7 +888,7 @@ with tab4:
                         is_fib_setup, context = evaluate_macro_fibonacci(df_symbol, lookback_bars=150)
                         
                         if is_fib_setup:
-                            live_logs.append(f"[FIBONACCI] {symbol:<6} : {context['phase']}")
+                            live_logs.append(f"[🎯 FIBONACCI] {symbol:<6} : {context['phase']}")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -913,7 +904,7 @@ with tab4:
                             st.session_state.stored_dfs_t4[symbol] = df_symbol
                             st.session_state.stored_contexts_t4[symbol] = context
                         else:
-                            live_logs.append(f"[FAIL] {symbol:<6} : Fibonacci uyumu yok.")
+                            live_logs.append(f"[FAIL] {symbol:<6} : Uygun Alım Aralığı bulunamadı.")
                     else:
                         live_logs.append(f"[SKIP] {symbol:<6} : Yeterli geçmiş veri bulunamadı.")
                         
@@ -923,7 +914,7 @@ with tab4:
 
     if st.session_state.tab4_rows:
         st.write("---")
-        st.write(f"### İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t4_selected_mkt})")
+        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK ALIM BÖLGESİNDEKİ HİSSELER ({t4_selected_mkt})")
         
         res_df = pd.DataFrame(st.session_state.tab4_rows)
         res_df = res_df.sort_values(by="Aşama / Durum")
@@ -934,7 +925,7 @@ with tab4:
                          "Güncel Fiyat": st.column_config.NumberColumn("Güncel Fiyat", format="%.2f"),
                          "Tarihi Zirve (0)": st.column_config.NumberColumn("Tarihi Zirve (0.0)", format="%.2f", help="Aşılması gereken makro zirve"),
                          "Altın Oran (0.618)": st.column_config.NumberColumn("Altın Oran (0.618)", format="%.2f", help="Maksimum geri çekilme ve alım bölgesi"),
-                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Kırılım sonrası istatistiksel ana direnç"),
+                         "Uzay Hedefi (1.618)": st.column_config.NumberColumn("Uzay Hedefi (1.618)", format="%.2f", help="Kırılım sonrası istatistiksel ana direnç (Sadece referans amaçlıdır)"),
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
                      })
                      
