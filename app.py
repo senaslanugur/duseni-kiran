@@ -147,7 +147,9 @@ def draw_trader_chart(symbol, df_target):
     return fig
 
 def draw_macro_trend_chart(symbol, df_target, context):
-    df = df_target.tail(150).copy() 
+    """Tab-2 İçin Hatasız Senkronize Çizim Motoru"""
+    lookback_bars = context.get('lookback_bars', 200)
+    df = df_target.tail(lookback_bars).copy() 
     df.columns = [str(c).lower() for c in df.columns] 
     
     plt.style.use('dark_background')
@@ -167,11 +169,12 @@ def draw_macro_trend_chart(symbol, df_target, context):
     max_u_slope = context['max_u_slope']
     u_start_p = context['u_start_p']
     
-    trend_dates = df_target.index[u_start_b:]
-    trend_prices = [u_start_p + max_u_slope * (i - u_start_b) for i in range(u_start_b, len(df_target))]
+    # Doğru indeksleme ile trend çizgisi
+    trend_dates = df.index[u_start_b:]
+    trend_prices = [u_start_p + max_u_slope * (i - u_start_b) for i in range(u_start_b, len(df))]
     
     ax1.plot(trend_dates, trend_prices, color='#f59e0b', linewidth=2.5, linestyle='--', label='Kırılan Ana Direnç')
-    ax1.scatter(df_target.index[u_start_b], u_start_p, color='#f59e0b', s=100, zorder=5, label='Tarihi Zirve') 
+    ax1.scatter(df.index[u_start_b], u_start_p, color='#f59e0b', s=100, zorder=5, label='Tarihi Zirve') 
     
     ax1.scatter(df.index[-1], df['high'].iloc[-1] * 1.05, color='#00ffff', marker='v', s=150, zorder=5, label='Kırılım Onayı')
     
@@ -267,6 +270,44 @@ def draw_tab3_dynamic_chart(symbol, df_target, template_data):
     plt.tight_layout()
     return fig
 
+def draw_macro_fib_chart(symbol, df_target, context):
+    lookback_bars = context.get('lookback_bars', 200)
+    df = df_target.tail(lookback_bars).copy()
+    df.columns = [str(c).lower() for c in df.columns]
+    
+    plt.style.use('dark_background')
+    fig, ax1 = plt.subplots(1, 1, figsize=(15, 8))
+    fig.suptitle(f"{symbol} | MAKRO FIBONACCI EKRANI (HAFTALIK)", fontsize=14, fontweight='bold', color='#8b5cf6')
+    
+    up = df['close'] >= df['open']
+    down = df['close'] < df['open']
+    width = 4 
+    
+    ax1.bar(df.index[up], df['close'][up] - df['open'][up], width, bottom=df['open'][up], color='#10b981', edgecolor='#10b981', alpha=0.9)
+    ax1.bar(df.index[down], df['open'][down] - df['close'][down], width, bottom=df['close'][down], color='#ef4444', edgecolor='#ef4444', alpha=0.9)
+    ax1.vlines(df.index[up], df['low'][up], df['high'][up], color='#10b981', linewidth=1.5)
+    ax1.vlines(df.index[down], df['low'][down], df['high'][down], color='#ef4444', linewidth=1.5)
+    
+    ax1.axhline(context['fib_0'], color='#ef4444', linestyle='-', linewidth=1.5, alpha=0.8, label='Fib 0.0 (Makro Zirve)')
+    ax1.axhline(context['fib_0382'], color='#9ca3af', linestyle='--', linewidth=1, alpha=0.5, label='Fib 0.382')
+    ax1.axhline(context['fib_0500'], color='#f59e0b', linestyle='--', linewidth=1.5, alpha=0.8, label='Fib 0.500 (Denge)')
+    ax1.axhline(context['fib_0618'], color='#10b981', linestyle='-', linewidth=2, alpha=0.9, label='Fib 0.618 (Golden Pocket)')
+    ax1.axhline(context['fib_1'], color='#3b82f6', linestyle='-', linewidth=1.5, alpha=0.8, label='Fib 1.0 (Makro Dip)')
+    
+    if context['phase'] == "🚀 Zirve Kırılımı (Fib Uzayı)":
+        ax1.axhline(context['fib_target'], color='#c084fc', linestyle='-.', linewidth=2, label='Uzay Hedefi (1.618)')
+        
+    ax1.axhspan(context['fib_0618'], context['fib_0500'], color='#f59e0b', alpha=0.15, label='Altın Bölge (Alım Alanı)')
+    
+    ax1.set_title(f"AŞAMA: {context['phase']}", color='#9ca3af', loc='left', fontsize=11, fontweight='bold')
+    ax1.legend(loc='upper left', frameon=False)
+    ax1.grid(True, alpha=0.1)
+    
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    fig.autofmt_xdate()
+    plt.tight_layout()
+    return fig
+
 # =============================================================================
 # 4. API VE TEMEL TARAMA FONKSİYONLARI 
 # =============================================================================
@@ -336,58 +377,121 @@ def fetch_macro_data_cached(tickers):
     return yf.download(tickers=tickers, period="5y", interval="1wk", group_by="ticker", threads=True, progress=False)
 
 def evaluate_macro_trader_breakout(df, lookback_bars=200):
-    if df is None or len(df) < lookback_bars + 5: return False, None
-    highs, closes, opens, volumes = df['High'].values, df['Close'].values, df['Open'].values, df['Volume'].values
-    curr_idx, prev_idx = len(highs) - 1, len(highs) - 2
+    """Tab-2 Makro Trend Kırılımı (Tamamen Revize Edilmiş Katı Model)"""
+    if df is None or len(df) < lookback_bars: return False, None
     
-    # 1. Ana Tepe (Tarihi Zirve) Tespiti
-    # Zirvenin en az 10 hafta önce oluşmuş olmasını istiyoruz
-    start_search = max(0, curr_idx - lookback_bars)
-    end_search_peak = curr_idx - 10
-    if start_search >= end_search_peak: return False, None
-
-    u_start_b = start_search + np.argmax(highs[start_search:end_search_peak])
+    # Tüm hesaplamaları ve çizimleri aynı veri boyutuyla sabitle
+    df_calc = df.tail(lookback_bars).copy()
+    highs = df_calc['High'].values
+    closes = df_calc['Close'].values
+    opens = df_calc['Open'].values
+    volumes = df_calc['Volume'].values
+    
+    curr_idx = len(highs) - 1
+    prev_idx = curr_idx - 1
+    
+    # 1. GERÇEK MAKRO ZİRVE (En az 26 hafta = 6 ay önce olmalı)
+    min_peak_age = 26
+    end_search_peak = curr_idx - min_peak_age
+    
+    if end_search_peak <= 0: return False, None
+    
+    u_start_b = np.argmax(highs[:end_search_peak])
     u_start_p = highs[u_start_b]
-
-    # 2. Düşen Trend Çizgisinin Çizilmesi
-    # Trendin ikinci temas noktasını (u_sec_b) günümüzden en az 4 hafta önce arıyoruz
-    max_u_slope, u_sec_b = -np.inf, -1
+    
+    # Eğer fiyat zaten tarihi zirvesini aşmışsa (yeni zirvelere gidiyorsa) makro düşen trend geçersizdir.
+    if closes[curr_idx] > u_start_p:
+        return False, None
+        
+    # 2. DIŞBÜKEY TREND ÇİZGİSİ
+    max_u_slope = -np.inf
+    u_sec_b = -1
+    
+    # Trendin 2. temas noktası günümüzden en az 4 hafta önce olmalı
     search_end_slope = curr_idx - 4
-
     for i in range(u_start_b + 1, search_end_slope):
         slope = (highs[i] - u_start_p) / (i - u_start_b)
-        if slope < 0 and slope > max_u_slope:
+        if slope > max_u_slope:
             max_u_slope = slope
             u_sec_b = i
-
-    if u_sec_b == -1: return False, None
-
-    # 3. Kırılım Hesaplaması
+            
+    # Eğimin negatif olması zorunludur (Düşen trend çizgisi arıyoruz)
+    if u_sec_b == -1 or max_u_slope >= 0:
+        return False, None
+        
+    # 3. KATI KIRILIM KOŞULLARI
     prev_trendline = u_start_p + max_u_slope * (prev_idx - u_start_b)
     curr_trendline = u_start_p + max_u_slope * (curr_idx - u_start_b)
-
-    # KURAL 1: Son 1 ayda (4 hafta) fiyat trend çizgisinin KESİNLİKLE altında kalmış olmalı. 
-    # (Aylar öncesinden kırılıp yukarıda asılı kalanları eler)
-    for i in range(curr_idx - 4, curr_idx):
+    
+    # KURAL 1: SADECE BU HAFTA KIRILMALI (Önceki hafta kapanışı KESİNLİKLE çizginin ALTINDA olmalı)
+    if closes[prev_idx] >= prev_trendline:
+        return False, None
+        
+    # KURAL 2: Güncel hafta kapanışı çizginin ÜSTÜNDE olmalı
+    if closes[curr_idx] <= curr_trendline:
+        return False, None
+        
+    # KURAL 3: ESKİ KIRILIMLARI REDDET (Fiyat son 1 ay içinde zaten çizginin üstüne çıkmışsa ele)
+    for i in range(curr_idx - 4, prev_idx):
         trend_at_i = u_start_p + max_u_slope * (i - u_start_b)
         if closes[i] > trend_at_i:
             return False, None
-
-    # KURAL 2: Kırılım SADECE BU HAFTA gerçekleşmiş olmalı
-    line_crossed = (closes[prev_idx] <= prev_trendline) and (closes[curr_idx] > curr_trendline)
-
-    # KURAL 3: Kapanış mutlaka yeşil olmalı (Açılışın üzerinde kapatmalı)
+            
+    # KURAL 4: KESİN YEŞİL MUM (Kapanış mutlaka açılıştan yüksek olmalı)
     is_green_candle = closes[curr_idx] > opens[curr_idx]
-    
-    # KURAL 4: Hacim Şartı
+    if not is_green_candle:
+        return False, None
+        
+    # KURAL 5: HACİM ŞOKU
     avg_vol_1m = np.mean(volumes[curr_idx-5 : curr_idx-1])
     curr_vol = volumes[curr_idx]
-    is_volume_backed = (curr_vol > (avg_vol_1m * 1.5)) if avg_vol_1m > 0 else False
-    vol_increase_pct = (((curr_vol / avg_vol_1m) - 1) * 100) if avg_vol_1m > 0 else 0
+    
+    if avg_vol_1m <= 0 or curr_vol <= (avg_vol_1m * 1.5):
+        return False, None
+        
+    vol_increase_pct = ((curr_vol / avg_vol_1m) - 1) * 100
+    
+    return True, {
+        "price": closes[curr_idx], 
+        "trend_val": curr_trendline, 
+        "u_start_p": u_start_p, 
+        "u_start_b": u_start_b, 
+        "max_u_slope": max_u_slope, 
+        "vol_increase": vol_increase_pct,
+        "lookback_bars": lookback_bars 
+    }
 
-    if line_crossed and is_green_candle and is_volume_backed:
-        return True, {"price": closes[curr_idx], "trend_val": curr_trendline, "u_start_p": u_start_p, "u_start_b": u_start_b, "max_u_slope": max_u_slope, "vol_increase": vol_increase_pct}
-    return False, None
+# =============================================================================
+# (GİZLİ) FIBONACCI VE KESİŞİM FONKSİYONLARI
+# =============================================================================
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_fib_data_cached(tickers):
+    return yf.download(tickers=tickers, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
+
+def evaluate_macro_fibonacci(df, lookback_bars=150):
+    if df is None or len(df) < 50: return False, None
+    df_calc = df.tail(lookback_bars).copy()
+    highs, lows, closes, opens = df_calc['High'].values, df_calc['Low'].values, df_calc['Close'].values, df_calc['Open'].values
+    min_idx = np.argmin(lows)
+    if min_idx >= len(highs) - 5: return False, None 
+    max_idx = min_idx + np.argmax(highs[min_idx : -4])
+    swing_high, swing_low = highs[max_idx], lows[min_idx]
+    diff = swing_high - swing_low
+    if diff <= 0: return False, None
+    fib_0, fib_0236, fib_0382 = swing_high, swing_high - 0.236 * diff, swing_high - 0.382 * diff
+    fib_0500, fib_0618, fib_0786 = swing_high - 0.500 * diff, swing_high - 0.618 * diff, swing_high - 0.786 * diff
+    fib_1, fib_ext_1618 = swing_low, swing_high + 0.618 * diff
+    curr_close, curr_open = closes[-1], opens[-1]
+    in_golden_zone = (fib_0618 <= curr_close <= fib_0500)
+    dist_0500, dist_0618 = abs(curr_close - fib_0500) / fib_0500, abs(curr_close - fib_0618) / fib_0618
+    near_golden_zone = (dist_0500 < 0.02) or (dist_0618 < 0.02)
+    is_green_candle, valid_trend = curr_close > curr_open, curr_close > fib_0786
+    is_golden_pocket = (in_golden_zone or near_golden_zone) and is_green_candle and valid_trend
+    is_breakout = curr_close > swing_high
+    if is_golden_pocket: phase = "🟢 Alım Aralığı (0.618 Pullback)"
+    elif is_breakout: phase = "🚀 Zirve Kırılımı (Fib Uzayı)"
+    else: return False, None
+    return True, {"phase": phase, "price": curr_close, "fib_0": fib_0, "fib_0382": fib_0382, "fib_0500": fib_0500, "fib_0618": fib_0618, "fib_1": fib_1, "fib_target": fib_ext_1618, "lookback_bars": lookback_bars}
 
 # =============================================================================
 # 5. KANTİTATİF LABORATUVAR VERİ YAPISI
@@ -445,7 +549,7 @@ def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI",
+    "MAKRO TREND KIRILIMI (TAM OTONOM)",
     "TARAMA FILTRELERI"
 ])
 
@@ -560,7 +664,7 @@ with tab2:
                     if hasattr(df_all.columns, 'levels') and yf_ticker_key in df_all.columns.levels[0]:
                         df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Close', 'Open', 'Volume'])
                         
-                        is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
+                        is_breakout, context = evaluate_macro_trader_breakout(df_symbol, lookback_bars=200)
                         
                         if is_breakout:
                             live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
@@ -578,7 +682,7 @@ with tab2:
                             st.session_state.stored_dfs_t2[symbol] = df_symbol
                             st.session_state.stored_contexts_t2[symbol] = context
                         else:
-                            live_logs.append(f"[FAIL] {symbol:<6} : Makro kırılım (güncel hafta) veya hacim onayı yok.")
+                            live_logs.append(f"[FAIL] {symbol:<6} : Makro kırılım veya hacim onayı yok.")
                     else:
                         live_logs.append(f"[SKIP] {symbol:<6} : Yeterli geçmiş veri bulunamadı.")
                         
