@@ -584,4 +584,251 @@ with tab1:
         selected_stock_to_plot = st.selectbox("Detaylı inceleme için hisse seçin:", list(st.session_state.stored_dfs.keys()), key="t1_plot")
         if selected_stock_to_plot: st.pyplot(draw_trader_chart(selected_stock_to_plot, st.session_state.stored_dfs[selected_stock_to_plot]))
 
-# ----------------
+# ------------------------- TAB 2 -------------------------
+with tab2:
+    st.write("### MAKRO TREND KIRILIM ")
+    col_mkt2, col_btn2 = st.columns([3, 1])
+    with col_mkt2: t2_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t2_mkt")
+    with col_btn2: st.write("##"); run_macro_scan = st.button("TÜM PİYASAYI TARA (HAFTALIK)", key="t2_btn")
+    
+    if "tab2_rows" not in st.session_state: st.session_state.tab2_rows = []
+    if "stored_dfs_t2" not in st.session_state: st.session_state.stored_dfs_t2 = {}
+    if "stored_contexts_t2" not in st.session_state: st.session_state.stored_contexts_t2 = {}
+    
+    if run_macro_scan:
+        mkt_config = MARKET_CONFIGS[t2_selected_mkt]
+        st.session_state.tab2_rows = []
+        st.session_state.stored_dfs_t2 = {}
+        st.session_state.stored_contexts_t2 = {}
+        
+        with st.spinner(f"{t2_selected_mkt} Sembol verileri senkronize ediliyor..."):
+            market_symbols = get_all_market_symbols(mkt_config)
+            
+        if not market_symbols:
+            st.markdown("<div style='color:#ef4444; font-family:Inter; font-weight:600;'>[SİSTEM HATASI] Bağlantı hatası: Liste alınamadı.</div>", unsafe_allow_html=True)
+        else:
+            yf_tickers = [f"{s.replace('.', '-')}{mkt_config['yf_suffix']}" for s in market_symbols]
+            
+            with st.spinner(f"Makro veri havuzu oluşturuluyor ({len(market_symbols)} hisse, 5 Yıllık Haftalık Veri)..."):
+                df_all = fetch_macro_data_cached(tickers=yf_tickers)
+            
+            with st.spinner("Fiyat hareketi ve hacim patlaması taranıyor..."):
+                st.write("### SİSTEM LOG KONSOLU")
+                console_placeholder = st.empty()
+                p_bar = st.progress(0)
+                live_logs = [f"[SYSTEM]: Makro trend analizi {len(market_symbols)} hisse için başlatıldı...\n"]
+                console_placeholder.code("\n".join(live_logs))
+                
+                for idx, symbol in enumerate(market_symbols):
+                    p_bar.progress((idx + 1) / len(market_symbols))
+                    yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
+                    
+                    if hasattr(df_all.columns, 'levels') and yf_ticker_key in df_all.columns.levels[0]:
+                        df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Close', 'Open', 'Volume'])
+                        
+                        is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
+                        
+                        if is_breakout:
+                            live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
+                            tv_prefix = mkt_config["tv_prefix"]
+                            tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
+                            
+                            st.session_state.tab2_rows.append({
+                                "Hisse": symbol,
+                                "Kapanış": round(context["price"], 2),
+                                "Kırılan Direnç": round(context["trend_val"], 2),
+                                "Tarihi Zirve": round(context["u_start_p"], 2),
+                                "Hacim Patlaması": f"+%{context['vol_increase']:.1f}",
+                                "Bağlantı": tv_url
+                            })
+                            st.session_state.stored_dfs_t2[symbol] = df_symbol
+                            st.session_state.stored_contexts_t2[symbol] = context
+                        else:
+                            live_logs.append(f"[FAIL] {symbol:<6} : Makro kırılım veya hacim onayı yok.")
+                    else:
+                        live_logs.append(f"[SKIP] {symbol:<6} : Yeterli geçmiş veri bulunamadı.")
+                        
+                    console_placeholder.code("\n".join(live_logs[-15:]))
+                            
+            st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
+            
+    if st.session_state.tab2_rows:
+        st.write("---")
+        st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
+        st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
+                     column_config={
+                         "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
+                     })
+                     
+        st.write("---"); st.write("### MAKRO GRAFİK İNCELEME İSTASYONU")
+        selected_stock_t2 = st.selectbox("Detaylı kırılım analizi için hisse seçin:", list(st.session_state.stored_dfs_t2.keys()), key="t2_plot")
+        if selected_stock_t2: 
+            df_plot = st.session_state.stored_dfs_t2[selected_stock_t2]
+            ctx_plot = st.session_state.stored_contexts_t2[selected_stock_t2]
+            st.pyplot(draw_macro_trend_chart(selected_stock_t2, df_plot, ctx_plot))
+
+# ------------------------- TAB 3 -------------------------
+with tab3:
+    st.write("### FILTRELER ve ONERILER")
+    
+    sub_tab_selection = st.radio("MODÜL SEÇİMİ:", ["18 TEMEL KANTİTATİF ŞABLON", "3 KUSURSUZ KESİŞİM (CONFLUENCE)"], horizontal=True)
+    st.write("---")
+    
+    if sub_tab_selection == "18 TEMEL KANTİTATİF ŞABLON":
+        col_sel, col_empty = st.columns([2, 1])
+        with col_sel:
+            selected_template_key = st.selectbox("İncelemek İstediğiniz Strateji Şablonunu Seçin:", list(TAB5_TEMPLATES.keys()))
+        
+        active_template = TAB5_TEMPLATES[selected_template_key]
+        
+        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (ŞABLON DETAYI)", expanded=True):
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Ana Amacı:</b><br><span style='color:#9ca3af;'>{active_template['amacı']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Trader Hedefi:</b><br><span style='color:#9ca3af;'>{active_template['hedefi']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Görülmesi Gereken (Teyit):</b><br><span style='color:#10b981;'>{active_template['beklenti']}</span></div>", unsafe_allow_html=True)
+            
+        col_mkt5, col_btn5 = st.columns([3, 1])
+        with col_mkt5:
+            t5_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t5_mkt_1")
+        with col_btn5:
+            st.write("##")
+            run_tab5_single = st.button("ŞABLONU ÇALIŞTIR", key="t5_btn_1")
+            
+        if "tab5_rows_single" not in st.session_state: st.session_state.tab5_rows_single = []
+            
+        if run_tab5_single:
+            mkt_config = MARKET_CONFIGS[t5_selected_mkt]
+            st.session_state.tab5_rows_single = []
+            
+            st.write("### SİSTEM LOG KONSOLU")
+            console_placeholder = st.empty()
+            live_logs = [f"[SYSTEM]: TradingView API'sine şablon sorgusu gönderiliyor...\n"]
+            console_placeholder.code("\n".join(live_logs))
+            
+            with st.spinner("Şablon parametreleri uygulanıyor ve tarama yapılıyor..."):
+                results = scan_tab5_advanced_logic(mkt_config, active_template["tv_filters"])
+                st.session_state.tab5_rows_single = results
+                
+                if not results:
+                    live_logs.append(f"[UYARI]: Şablona uyan hisse bulunamadı.")
+                    console_placeholder.code("\n".join(live_logs[-15:]))
+                    st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu şablona uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
+                else:
+                    for item in results:
+                        time.sleep(0.05) 
+                        live_logs.append(f"[OK]   {item['Hisse']:<6} : Teknik şartlar doğrulandı.")
+                        console_placeholder.code("\n".join(live_logs[-15:]))
+                    st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
+                    
+        if st.session_state.tab5_rows_single:
+            st.write("---")
+            st.dataframe(pd.DataFrame(st.session_state.tab5_rows_single), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+            
+            st.write("---"); st.write("### DİNAMİK FİLTRE ONAY EKRANI")
+            symbols = [row['Hisse'] for row in st.session_state.tab5_rows_single]
+            selected_stock_t3 = st.selectbox("Filtre teyidi için hisse seçin:", symbols, key="t3_single_plot")
+            if selected_stock_t3:
+                mkt_config = MARKET_CONFIGS[t5_selected_mkt]
+                clean_sym = selected_stock_t3.replace('.', '-')
+                yf_ticker = f"{clean_sym}{mkt_config['yf_suffix']}"
+                with st.spinner("Koşullu grafik verisi çekiliyor..."):
+                    df_plot = yf.download(tickers=yf_ticker, period="1y", interval="1d", progress=False)
+                    if not df_plot.empty:
+                        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
+                        df_plot.columns = [str(c).lower() for c in df_plot.columns]
+                        st.pyplot(draw_tab3_dynamic_chart(selected_stock_t3, df_plot, active_template))
+
+    else:
+        col_sel, col_empty = st.columns([2, 1])
+        with col_sel:
+            selected_conf_key = st.selectbox("İncelemek İstediğiniz Kesişim Modelini Seçin:", list(TAB5_CONFLUENCES.keys()))
+            
+        active_conf = TAB5_CONFLUENCES[selected_conf_key]
+        
+        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (KESİŞİM DETAYI)", expanded=True):
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Birleştirilen Şablonlar:</b><br><span style='color:#d97706; font-weight:600;'>{active_conf['sablonlar']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Kesişim Mantığı:</b><br><span style='color:#9ca3af;'>{active_conf['mantik']}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Neden Buradan Alınır?</b><br><span style='color:#10b981;'>{active_conf['neden']}</span></div>", unsafe_allow_html=True)
+            
+        col_mkt5_c, col_btn5_c = st.columns([3, 1])
+        with col_mkt5_c:
+            t5_selected_mkt_c = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t5_mkt_2")
+        with col_btn5_c:
+            st.write("##")
+            run_tab5_conf = st.button("KESİŞİMİ ÇALIŞTIR", key="t5_btn_2")
+            
+        if "tab5_rows_conf" not in st.session_state: st.session_state.tab5_rows_conf = []
+            
+        if run_tab5_conf:
+            mkt_config = MARKET_CONFIGS[t5_selected_mkt_c]
+            st.session_state.tab5_rows_conf = []
+            
+            st.write("### SİSTEM LOG KONSOLU")
+            console_placeholder = st.empty()
+            live_logs = [f"[SYSTEM]: TradingView API'sine kesişim sorgusu gönderiliyor...\n"]
+            console_placeholder.code("\n".join(live_logs))
+            
+            with st.spinner("Kesişim parametreleri birleştiriliyor ve tarama yapılıyor..."):
+                results = scan_tab5_advanced_logic(mkt_config, active_conf["tv_filters"])
+                st.session_state.tab5_rows_conf = results
+                
+                if not results:
+                    live_logs.append(f"[UYARI]: Kesişim modeline uyan hisse bulunamadı.")
+                    console_placeholder.code("\n".join(live_logs[-15:]))
+                    st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu kesişim modeline uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
+                else:
+                    for item in results:
+                        time.sleep(0.05) 
+                        live_logs.append(f"[OK]   {item['Hisse']:<6} : Kesişim şartları doğrulandı.")
+                        console_placeholder.code("\n".join(live_logs[-15:]))
+                    st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
+                    
+        if st.session_state.tab5_rows_conf:
+            st.write("---")
+            st.dataframe(pd.DataFrame(st.session_state.tab5_rows_conf), use_container_width=True, hide_index=True, column_config={"Bağlantı": st.column_config.LinkColumn("TradingView", display_text="Grafiği Aç")})
+            
+            st.write("---"); st.write("### DİNAMİK FİLTRE ONAY EKRANI")
+            symbols = [row['Hisse'] for row in st.session_state.tab5_rows_conf]
+            selected_stock_t3_c = st.selectbox("Kesişim teyidi için hisse seçin:", symbols, key="t3_conf_plot")
+            if selected_stock_t3_c:
+                mkt_config = MARKET_CONFIGS[t5_selected_mkt_c]
+                clean_sym = selected_stock_t3_c.replace('.', '-')
+                yf_ticker = f"{clean_sym}{mkt_config['yf_suffix']}"
+                with st.spinner("Koşullu grafik verisi çekiliyor..."):
+                    df_plot = yf.download(tickers=yf_ticker, period="1y", interval="1d", progress=False)
+                    if not df_plot.empty:
+                        if isinstance(df_plot.columns, pd.MultiIndex): df_plot.columns = df_plot.columns.get_level_values(0)
+                        df_plot.columns = [str(c).lower() for c in df_plot.columns]
+                        mock_template = {"amacı": active_conf['sablonlar']}
+                        st.pyplot(draw_tab3_dynamic_chart(selected_stock_t3_c, df_plot, mock_template))
+
+# ------------------------- TAB 4 (YENİ) -------------------------
+with tab4:
+    st.write("### OTONOM MAKRO FIBONACCI AĞI (HAFTALIK)")
+    
+    col_mkt4, col_btn4 = st.columns([3, 1])
+    with col_mkt4: t4_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t4_mkt")
+    with col_btn4: st.write("##"); run_fib_scan = st.button("FIBONACCI AĞINI ÇALIŞTIR", key="t4_btn")
+    
+    st.markdown("""
+    <div style='background-color:#111827; padding:15px; border-left:4px solid #8b5cf6; margin-bottom:20px; margin-top:10px;'>
+        <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Makro İstatistiksel Fırsat Avcısı:</div>
+        <div style='color:#9ca3af; font-size:13px;'>Tab-2'de kullanılan 5 Yıllık Haftalık Makro Veri Havuzunu kullanarak devasa bir Fibonacci ağı çizer. Piyasayı 2 farklı Matematiksel Faza göre sınıflandırır:</div>
+        <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
+            [AŞAMA 1]: "🟢 Alım Aralığı (0.618 Pullback)" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranından destek alarak yeşil mum yaktığı risksiz bölge.<br>
+            [AŞAMA 2]: "🚀 Zirve Kırılımı (Fib Uzayı)" - Hissenin makro tarihi zirvesini (Fib 0.0) kırıp geçtiği ve önünde 1.618 uzay hedefinden başka hiçbir direncin kalmadığı patlama evresi.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if "tab4_rows" not in st.session_state: st.session_state.tab4_rows = []
+    if "stored_dfs_t4" not in st.session_state: st.session_state.stored_dfs_t4 = {}
+    if "stored_contexts_t4" not in st.session_state: st.session_state.stored_contexts_t4 = {}
+    
+    if run_fib_scan:
+        mkt_config = MARKET_CONFIGS[t4_selected_mkt]
+        st.session_state.tab4_rows = []
+        st.session_state.stored_dfs_t4 = {}
+        st.session_state.stored_contexts_t4 = {}
+        
+        with st.spinner(f"{t4_selected_mkt} Sembol verileri senkronize ediliyor..."):
+            market
