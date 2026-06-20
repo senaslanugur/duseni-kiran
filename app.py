@@ -293,7 +293,7 @@ def draw_macro_fib_chart(symbol, df_target, context):
     ax1.axhline(context['fib_1'], color='#3b82f6', linestyle='-', linewidth=1.5, alpha=0.8, label='Fib 1.0 (Makro Dip)')
     
     # Breakout Uzay Hedefi
-    if context['phase'] == "🚀 Zirve Kırılımı (Fib Uzayı)":
+    if context['phase'] == "🔴 Zirve Kırılımı (Fib Uzayı)":
         ax1.axhline(context['fib_target'], color='#c084fc', linestyle='-.', linewidth=2, label='Uzay Hedefi (1.618)')
         
     # Golden Pocket (Alım Alanı) Arka Plan Gölgesi
@@ -450,7 +450,7 @@ def evaluate_macro_fibonacci(df, lookback_bars=150):
     if is_golden_pocket: 
         phase = "🟢 Alım Aralığı (0.618 Pullback)"
     elif is_breakout: 
-        phase = "🚀 Zirve Kırılımı (Fib Uzayı)"
+        phase = "🔴  Zirve Kırılımı (Fib Uzayı)"
     else: 
         return False, None
         
@@ -514,7 +514,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
     "MAKRO TREND KIRILIMI",
     "TARAMA FILTRELERI",
-    "MAKRO FIBONACCI (YENİ)"
+    "MAKRO FIBONACCI"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -629,7 +629,7 @@ with tab2:
                         is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
                         
                         if is_breakout:
-                            live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
+                            live_logs.append(f"[DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -654,7 +654,7 @@ with tab2:
             
     if st.session_state.tab2_rows:
         st.write("---")
-        st.write(f"### 🏆 HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
+        st.write(f"### HACİMLİ MAKRO KIRILIMI ONAYLANAN HİSSELER ({t2_selected_mkt})")
         st.dataframe(pd.DataFrame(st.session_state.tab2_rows), use_container_width=True, hide_index=True,
                      column_config={
                          "Bağlantı": st.column_config.LinkColumn("TradingView (Haftalık)", display_text="Grafiği Aç")
@@ -815,7 +815,7 @@ with tab4:
         <div style='color:#9ca3af; font-size:13px;'>Tab-2'de kullanılan 5 Yıllık Haftalık Makro Veri Havuzunu kullanarak devasa bir Fibonacci ağı çizer. Piyasayı 2 farklı Matematiksel Faza göre sınıflandırır:</div>
         <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
             [AŞAMA 1]: "🟢 Alım Aralığı (0.618 Pullback)" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranından destek alarak yeşil mum yaktığı risksiz bölge.<br>
-            [AŞAMA 2]: "🚀 Zirve Kırılımı (Fib Uzayı)" - Hissenin makro tarihi zirvesini (Fib 0.0) kırıp geçtiği ve önünde 1.618 uzay hedefinden başka hiçbir direncin kalmadığı patlama evresi.
+            [AŞAMA 2]: "🔴 Zirve Kırılımı (Fib Uzayı)" - Hissenin makro tarihi zirvesini (Fib 0.0) kırıp geçtiği ve önünde 1.618 uzay hedefinden başka hiçbir direncin kalmadığı patlama evresi.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -858,7 +858,7 @@ with tab4:
                         is_fib_setup, context = evaluate_macro_fibonacci(df_symbol)
                         
                         if is_fib_setup:
-                            live_logs.append(f"[🎯 FIBONACCI] {symbol:<6} : {context['phase']}")
+                            live_logs.append(f"[FIBONACCI] {symbol:<6} : {context['phase']}")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -884,7 +884,7 @@ with tab4:
 
     if st.session_state.tab4_rows:
         st.write("---")
-        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t4_selected_mkt})")
+        st.write(f"### İSTATİSTİKSEL OLARAK DÖNGÜDEKİ HİSSELER ({t4_selected_mkt})")
         
         res_df = pd.DataFrame(st.session_state.tab4_rows)
         res_df = res_df.sort_values(by="Aşama / Durum")
