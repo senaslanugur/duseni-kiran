@@ -234,7 +234,7 @@ def evaluate_macro_trader_breakout(df, lookback_bars=200):
     return False, None
 
 # =============================================================================
-# (GİZLİ) FIBONACCI VE KESİŞİM FONKSİYONLARI (KULLANILMIYOR AMA KORUNDU)
+# (GİZLİ) FIBONACCI VE KESİŞİM FONKSİYONLARI (İLERİDE KULLANILMAK ÜZERE KORUNDU)
 # =============================================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_fib_data_cached(tickers):
@@ -491,18 +491,26 @@ with tab1:
                 is_matched, v_data, df_target = check_yfinance_volume_condition(symbol, tf_config, mkt_config)
                 time.sleep(random.uniform(0.05, 0.15)) 
                 
-                if v_data is None: continue
+                if v_data is None: 
+                    live_logs.append(f"[ERR]  {symbol:<6} : Veri bağlantısı kurulamadı.")
+                    console_placeholder.code("\n".join(live_logs[-15:]))
+                    continue
                     
                 v1_f, v2_f, v3_f = f"{v_data['v1']:,.0f}", f"{v_data['v2']:,.0f}", f"{v_data['v3']:,.0f}"
         
                 if is_matched:
+                    live_logs.append(f"[OK]   {symbol:<6} : V1:{v1_f} < V2:{v2_f} < V3:{v3_f} (Hacim Onaylandı)")
                     macd_val, sig_val = tv_data['macd'], tv_data['signal']
-                    macd_status = f"NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
+                    macd_status = f"🔴 NEGATIF BOLGE ({macd_val:.2f}/{sig_val:.2f})" if macd_val is not None and macd_val < 0 else f"🟢 POZITIF BOLGE ({macd_val:.2f}/{sig_val:.2f})"
                     tv_prefix = mkt_config["tv_prefix"]
                     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval={tf_config['tv_interval']}"
                     
                     st.session_state.final_rows.append({"Hisse": symbol, "Fiyat": round(v_data["price"], 2), "RSI (50+)": round(tv_data["rsi"], 1), "MACD Durumu": macd_status, "SMA (20/50/200)": f"{safe_fmt(tv_data['sma20'], '.1f')} / {safe_fmt(tv_data['sma50'], '.1f')} / {safe_fmt(tv_data['sma200'], '.1f')}", "V1 (T-2)": v1_f, "V2 (T-1)": v2_f, "V3 (Güncel)": v3_f, "Bağlantı": tv_url})
                     st.session_state.stored_dfs[symbol] = df_target
+                else:
+                    live_logs.append(f"[FAIL] {symbol:<6} : V1:{v1_f} -> V2:{v2_f} -> V3:{v3_f} (Koşul Sağlanmadı)")
+                    
+                console_placeholder.code("\n".join(live_logs[-15:]))
                 
             st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama işlemi başarıyla tamamlandı.</div>", unsafe_allow_html=True)
 
@@ -538,20 +546,23 @@ with tab2:
                 df_all = fetch_macro_data_cached(tickers=yf_tickers)
             
             with st.spinner("Fiyat hareketi ve hacim patlaması taranıyor..."):
-                pine_logs = []
-                pine_console = st.empty()
+                st.write("### SİSTEM LOG KONSOLU")
+                console_placeholder = st.empty()
                 p_bar = st.progress(0)
+                live_logs = [f"[SYSTEM]: Makro trend analizi {len(market_symbols)} hisse için başlatıldı...\n"]
+                console_placeholder.code("\n".join(live_logs))
                 
                 for idx, symbol in enumerate(market_symbols):
                     p_bar.progress((idx + 1) / len(market_symbols))
                     yf_ticker_key = f"{symbol.replace('.', '-')}{mkt_config['yf_suffix']}"
                     
-                    if yf_ticker_key in df_all.columns.levels[0]:
+                    if hasattr(df_all.columns, 'levels') and yf_ticker_key in df_all.columns.levels[0]:
                         df_symbol = df_all[yf_ticker_key].dropna(subset=['High', 'Close', 'Open', 'Volume'])
                         
                         is_breakout, context = evaluate_macro_trader_breakout(df_symbol)
                         
                         if is_breakout:
+                            live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -563,6 +574,12 @@ with tab2:
                                 "Hacim Patlaması": f"+%{context['vol_increase']:.1f}",
                                 "Bağlantı": tv_url
                             })
+                        else:
+                            live_logs.append(f"[FAIL] {symbol:<6} : Makro kırılım veya hacim onayı yok.")
+                    else:
+                        live_logs.append(f"[SKIP] {symbol:<6} : Yeterli geçmiş veri bulunamadı.")
+                        
+                    console_placeholder.code("\n".join(live_logs[-15:]))
                             
             st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Strateji taraması tamamlandı.</div>", unsafe_allow_html=True)
             
@@ -588,7 +605,7 @@ with tab3:
         
         active_template = TAB5_TEMPLATES[selected_template_key]
         
-        with st.expander("ŞABLON DETAYI", expanded=True):
+        with st.expander("SİSTEM MÜHENDİSLİĞİ VE TRADER NOTLARI (ŞABLON DETAYI)", expanded=True):
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Ana Amacı:</b><br><span style='color:#9ca3af;'>{active_template['amacı']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Trader Hedefi:</b><br><span style='color:#9ca3af;'>{active_template['hedefi']}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div style='color:#e5e7eb; font-size:14px; margin-bottom:10px;'><b>Görülmesi Gereken (Teyit):</b><br><span style='color:#10b981;'>{active_template['beklenti']}</span></div>", unsafe_allow_html=True)
@@ -605,12 +622,25 @@ with tab3:
         if run_tab5_single:
             mkt_config = MARKET_CONFIGS[t5_selected_mkt]
             st.session_state.tab5_rows_single = []
+            
+            st.write("### SİSTEM LOG KONSOLU")
+            console_placeholder = st.empty()
+            live_logs = [f"[SYSTEM]: TradingView API'sine şablon sorgusu gönderiliyor...\n"]
+            console_placeholder.code("\n".join(live_logs))
+            
             with st.spinner("Şablon parametreleri uygulanıyor ve tarama yapılıyor..."):
                 results = scan_tab5_advanced_logic(mkt_config, active_template["tv_filters"])
                 st.session_state.tab5_rows_single = results
+                
                 if not results:
+                    live_logs.append(f"[UYARI]: Şablona uyan hisse bulunamadı.")
+                    console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu şablona uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
                 else:
+                    for item in results:
+                        time.sleep(0.05) # Görsel terminal akış efekti
+                        live_logs.append(f"[OK]   {item['Hisse']:<6} : Teknik şartlar doğrulandı.")
+                        console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
                     
         if st.session_state.tab5_rows_single:
@@ -641,12 +671,25 @@ with tab3:
         if run_tab5_conf:
             mkt_config = MARKET_CONFIGS[t5_selected_mkt_c]
             st.session_state.tab5_rows_conf = []
+            
+            st.write("### SİSTEM LOG KONSOLU")
+            console_placeholder = st.empty()
+            live_logs = [f"[SYSTEM]: TradingView API'sine kesişim sorgusu gönderiliyor...\n"]
+            console_placeholder.code("\n".join(live_logs))
+            
             with st.spinner("Kesişim parametreleri birleştiriliyor ve tarama yapılıyor..."):
                 results = scan_tab5_advanced_logic(mkt_config, active_conf["tv_filters"])
                 st.session_state.tab5_rows_conf = results
+                
                 if not results:
+                    live_logs.append(f"[UYARI]: Kesişim modeline uyan hisse bulunamadı.")
+                    console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#f59e0b; font-family:Inter; font-weight:600;'>[SİSTEM UYARISI] Bu kesişim modeline uyan hisse bulunamadı.</div>", unsafe_allow_html=True)
                 else:
+                    for item in results:
+                        time.sleep(0.05) # Görsel terminal akış efekti
+                        live_logs.append(f"[OK]   {item['Hisse']:<6} : Kesişim şartları doğrulandı.")
+                        console_placeholder.code("\n".join(live_logs[-15:]))
                     st.markdown("<div style='color:#10b981; font-family:Inter; font-weight:600;'>[SİSTEM BİLGİSİ] Tarama tamamlandı.</div>", unsafe_allow_html=True)
                     
         if st.session_state.tab5_rows_conf:
