@@ -569,9 +569,9 @@ def scan_tab5_advanced_logic(mkt_config, tv_filter_payload):
 st.title("TRADER WORKSTATION")
 tab1, tab2, tab3, tab4 = st.tabs([
     "HİBRİT TARAMA", 
-    "MAKRO TREND KIRILIMI (TAM OTONOM)",
+    "MAKRO TREND KIRILIMI",
     "TARAMA FILTRELERI",
-    "MAKRO FIBONACCI (HAFTALIK)"
+    "MAKRO FIBONACCI"
 ])
 
 # ------------------------- TAB 1 -------------------------
@@ -688,7 +688,7 @@ with tab2:
                         is_breakout, context = evaluate_macro_trader_breakout(df_symbol, lookback_bars=200)
                         
                         if is_breakout:
-                            live_logs.append(f"[🔥 DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
+                            live_logs.append(f"[DEV KIRILIM] {symbol:<6} : Hacim Oranı +%{context['vol_increase']:.0f}!")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -862,7 +862,7 @@ with tab3:
 
 # ------------------------- TAB 4 (YENİ) -------------------------
 with tab4:
-    st.write("### OTONOM MAKRO FIBONACCI AĞI (HAFTALIK)")
+    st.write("### OTONOM MAKRO FIBONACCI AĞI")
     
     col_mkt4, col_btn4 = st.columns([3, 1])
     with col_mkt4: t4_selected_mkt = st.selectbox("Piyasa Seçin:", list(MARKET_CONFIGS.keys()), key="t4_mkt")
@@ -873,7 +873,7 @@ with tab4:
         <div style='color:#e5e7eb; font-weight:600; font-size:14px; margin-bottom:5px;'>Makro İstatistiksel Fırsat Avcısı:</div>
         <div style='color:#9ca3af; font-size:13px;'>Haftalık Makro Veri Havuzunu kullanarak devasa bir Fibonacci ağı çizer. Uzay kırılımlarını (breakout) tamamen es geçerek sadece asimetrik kârın gizlendiği güvenli bölgeye odaklanır:</div>
         <div style='color:#8b5cf6; font-family:JetBrains Mono; font-size:12px; margin-top:8px;'>
-            🎯 SADECE ODAKLANILAN AŞAMA: "[ALIM ARALIĞI] 0.618 Pullback" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranı civarlarından (0.500 ile 0.786 arası) destek alarak yeşil mum yaktığı en risksiz maliyetlenme bölgesidir.
+             SADECE ODAKLANILAN AŞAMA: "[ALIM ARALIĞI] 0.618 Pullback" - Akıllı paranın kâr realizasyonu bittiği ve fiyatın Fibonacci 0.618 Altın Oranı civarlarından (0.500 ile 0.786 arası) destek alarak yeşil mum yaktığı en risksiz maliyetlenme bölgesidir.
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -916,7 +916,7 @@ with tab4:
                         is_fib_setup, context = evaluate_macro_fibonacci(df_symbol, lookback_bars=260)
                         
                         if is_fib_setup:
-                            live_logs.append(f"[🎯 FIBONACCI] {symbol:<6} : {context['phase']}")
+                            live_logs.append(f"[FIBONACCI] {symbol:<6} : {context['phase']}")
                             tv_prefix = mkt_config["tv_prefix"]
                             tv_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{symbol}&interval=W"
                             
@@ -942,7 +942,7 @@ with tab4:
 
     if st.session_state.tab4_rows:
         st.write("---")
-        st.write(f"### 🎯 İSTATİSTİKSEL OLARAK ALIM BÖLGESİNDEKİ HİSSELER ({t4_selected_mkt})")
+        st.write(f"### İSTATİSTİKSEL OLARAK ALIM BÖLGESİNDEKİ HİSSELER ({t4_selected_mkt})")
         
         res_df = pd.DataFrame(st.session_state.tab4_rows)
         res_df = res_df.sort_values(by="Aşama / Durum")
